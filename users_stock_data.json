@@ -1,17 +1,1 @@
-{
-    "1129": {
-        "password": "e8c5eb6ae2407239d9f5f21c5286530db0edc3b226ce3094ca15cb3a6fc2c885",
-        "stocks": [
-            {
-                "name": "大井泵浦",
-                "code": "6982.TWO",
-                "buy_price": 20.0,
-                "qty": 1
-            }
-        ]
-    },
-    "891129": {
-        "password": "e8c5eb6ae2407239d9f5f21c5286530db0edc3b226ce3094ca15cb3a6fc2c885",
-        "stocks": []
-    }
-}
+{}
