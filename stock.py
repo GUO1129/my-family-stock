@@ -26,7 +26,7 @@ def save_all_data(all_data):
         json.dump(all_data, f, ensure_ascii=False, indent=4)
 
 # --- 2. 網頁初始化 ---
-st.set_page_config(page_title="家族投資究極系統 4.0", layout="wide")
+st.set_page_config(page_title="家族投資究極系統 4.1", layout="wide")
 
 if 'all_data' not in st.session_state:
     st.session_state.all_data = load_all_data()
@@ -34,23 +34,22 @@ if 'all_data' not in st.session_state:
 current_user = st.session_state.get('current_user', None)
 
 if not current_user:
-    st.title("🛡️ 家族投資管理系統 4.0")
+    st.title("🛡️ 家族投資管理系統 4.1")
     st.sidebar.title("🔐 系統登入")
-    user_id_input = st.sidebar.text_input("使用者帳號", key="login_user_id")
-    password_input = st.sidebar.text_input("密碼", type="password", key="login_password")
+    u_input = st.sidebar.text_input("帳號", key="login_u")
+    p_input = st.sidebar.text_input("密碼", type="password", key="login_p")
 
     if st.sidebar.button("登入 / 建立帳號"):
-        if user_id_input and password_input:
-            pw_hash = make_hash(password_input)
-            if user_id_input not in st.session_state.all_data:
-                # 記憶功能：根據使用者要求，為每個新帳號提供密碼保護
-                st.session_state.all_data[user_id_input] = {"password": pw_hash, "stocks": []}
+        if u_input and p_input:
+            pw_hash = make_hash(p_input)
+            if u_input not in st.session_state.all_data:
+                st.session_state.all_data[u_input] = {"password": pw_hash, "stocks": []}
                 save_all_data(st.session_state.all_data)
-                st.session_state.current_user = user_id_input
+                st.session_state.current_user = u_input
                 st.rerun()
             else:
-                if st.session_state.all_data[user_id_input]["password"] == pw_hash:
-                    st.session_state.current_user = user_id_input
+                if st.session_state.all_data[u_input]["password"] == pw_hash:
+                    st.session_state.current_user = u_input
                     st.rerun()
                 else: st.sidebar.error("❌ 密碼錯誤")
     st.stop()
@@ -65,13 +64,32 @@ if st.sidebar.button("登出系統"):
 
 st.sidebar.divider()
 st.sidebar.subheader("⚙️ 費率設定")
-fee_discount = st.sidebar.slider("台股手續費折數", 0.1, 1.0, 0.28, 0.01)
-us_fee = st.sidebar.number_input("美股單筆手續費 (USD)", min_value=0.0, value=0.0)
+fee_rate = st.sidebar.slider("台股手續費折數", 0.1, 1.0, 0.28, 0.01)
 
 # --- 4. 主功能：我的資產 ---
 if menu == "📈 我的資產":
     st.title(f"📈 {current_user} 的投資即時儀表板")
     
     with st.expander("📝 新增持股資料"):
-        with st.form("add_new_stock_form", clear_on_submit=True):
-            col1, col2
+        with st.form("add_form", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            name = c1.text_input("股票名稱")
+            code = c2.text_input("代碼 (.TW / AAPL)")
+            buy_p = c3.number_input("買入均價", min_value=0.0)
+            qty = c1.number_input("股數", min_value=1)
+            tgt = c2.number_input("停利價", min_value=0.0)
+            stp = c3.number_input("停損價", min_value=0.0)
+            if st.form_submit_button("➕ 加入清單"):
+                if name and code:
+                    st.session_state.all_data[current_user]["stocks"].append({
+                        "name": name, "code": code.upper(), "buy_price": buy_p, 
+                        "qty": qty, "target": tgt, "stop": stp
+                    })
+                    save_all_data(st.session_state.all_data)
+                    st.rerun()
+
+    user_stocks = st.session_state.all_data[current_user]["stocks"]
+    if user_stocks:
+        results = []
+        total_tw = 0
+        total_us =
