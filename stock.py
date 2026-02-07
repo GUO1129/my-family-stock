@@ -1,4 +1,44 @@
 import streamlit as st
+# --- 這裡設定你的帳號密碼 ---
+# 你可以自由修改引號裡的帳號和密碼
+users = {
+    "admin": "123456",  # 這是你的帳號
+    "family": "888888"  # 這是給家人的帳號
+}
+
+def check_password():
+    """如果是正確的帳號密碼，則回傳 True"""
+    def password_entered():
+        if st.session_state["username"] in users and \
+           st.session_state["password"] == users[st.session_state["username"]]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # 為了安全，登入後刪除暫存密碼
+            del st.session_state["username"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # 第一次進入網頁，顯示登入介面
+        st.title("🔐 私人投資後台")
+        st.text_input("使用者帳號", key="username")
+        st.text_input("密碼", type="password", key="password")
+        st.button("登入", on_click=password_entered)
+        return False
+    elif not st.session_state["password_correct"]:
+        # 密碼輸入錯誤
+        st.text_input("使用者帳號", key="username")
+        st.text_input("密碼", type="password", key="password")
+        st.button("登入", on_click=password_entered)
+        st.error("😕 帳號或密碼錯誤，請再試一次")
+        return False
+    else:
+        # 密碼正確
+        return True
+
+# --- 程式主體開始 ---
+if check_password():
+    st.success("🎉 歡迎回來！")
+    # 這裡放你原本的股票查詢程式碼...
 import yfinance as yf
 import pandas as pd
 import plotly.express as px
@@ -150,4 +190,5 @@ else:
 if st.sidebar.button("🗑️ 清空我的所有紀錄", key="clear_all_btn"):
     st.session_state.all_data[current_user]["stocks"] = []
     save_all_data(st.session_state.all_data)
+
     st.rerun()
