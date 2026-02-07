@@ -139,4 +139,19 @@ elif m == "📅 股利日曆":
         ev = []
         for i in sk:
             try:
-                c = yf.Ticker
+                c = yf.Ticker(i["t"]).calendar
+                if c is not None and not c.empty:
+                    ev.append({"股票": i["n"], "日期": c.iloc[0, 0].strftime('%Y-%m-%d')})
+            except: continue
+        if ev: st.table(pd.DataFrame(ev))
+        else: st.info("無近期事件。")
+
+# --- 7. 攤平計算機 ---
+elif m == "🧮 攤平計算機":
+    st.title("🧮 成本攤平工具")
+    p1 = st.number_input("原單價", value=100.0)
+    q1 = st.number_input("原股數", value=1000.0)
+    p2 = st.number_input("加碼價", value=90.0)
+    q2 = st.number_input("加碼數", value=1000.0)
+    avg = round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)
+    st.metric("💡 均價結果", f"{avg} 元")
