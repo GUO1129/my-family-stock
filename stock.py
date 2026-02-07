@@ -127,6 +127,63 @@ if menu == "📈 我的資產":
 
             st.subheader("📊 持股明細")
             df_show = pd.DataFrame(results)
-            st.dataframe(df_show, use)
-            
+            st.dataframe(df_show, use_container_width=True)
 
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.plotly_chart(px.pie(df_show, values='市值', names='股票', hole=0.5, title="資產分配"), use_container_width=True)
+            with col_b:
+                st.plotly_chart(px.line(yf.Ticker(results[0]["代碼"]).history(period="6mo"), y="Close", title=f"{results[0]['股票']} 半年走勢"), use_container_width=True)
+            
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_show.to_excel(writer, index=False)
+            st.download_button("📥 匯出 Excel 報表", output.getvalue(), f"{current_user}_stocks.xlsx")
+    else: st.info("目前清單是空的。")
+
+# --- 5. 功能：成本攤平計算器 ---
+elif menu == "🧮 成本攤平計算器":
+    st.title("🧮 成本攤平計算器")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("💡 目前持股")
+        old_price = st.number_input("目前買入均價", min_value=0.0, value=100.0, step=0.1)
+        old_qty = st.number_input("目前持有股數", min_value=1, value=1000, step=100)
+    with col2:
+        st.subheader("💸 預計加碼")
+        new_price = st.number_input("預計加碼股價", min_value=0.0, value=90.0, step=0.1)
+        new_qty = st.number_input("預計加碼股數", min_value=1, value=1000, step=100)
+    
+    total_shares = old_qty + new_qty
+    if total_shares > 0:
+        avg_price = ((old_price * old_qty) + (new_price * new_qty)) / total_shares
+        st.divider()
+        res1, res2 = st.columns(2)
+        res1.metric("攤平後新均價", f"{round(avg_price, 2)} 元")
+        res2.metric("成本降幅", f"{round(((old_price - avg_price) / old_price) * 100, 2) if old_price > 0 else 0} %", delta=f"-{round(old_price-avg_price, 2)}")
+
+# --- 6. 功能：財經行事曆 ---
+elif menu == "📅 財經行事曆":
+    st.title("📅 財經行事曆 (持股相關)")
+    user_stocks = st.session_state.all_data[current_user]["stocks"]
+    if user_stocks:
+        calendar_events = []
+        with st.spinner('查詢中...'):
+            for s in user_stocks:
+                try:
+                    t = yf.Ticker(s["code"])
+                    cal = t.calendar
+                    if cal is not None and not cal.empty:
+                        event_date = cal.iloc[0, 0]
+                        event_name = cal.index[0]
+                        calendar_events.append({"股票": s["name"], "日期": event_date.strftime('%Y-%m-%d'), "事件": event_name})
+                except: pass
+        if calendar_events:
+            st.table(pd.DataFrame(calendar_events))
+        else: st.info("暫時沒有查到最近的重大事件。")
+    else: st.info("請先回到資產頁面新增股票。")
+
+if st.sidebar.button("🗑️ 清空所有紀錄"):
+    st.session_state.all_data[current_user]["stocks"] = []
+    save_all_data(st.session_state.all_data)
+    st.rerun()
