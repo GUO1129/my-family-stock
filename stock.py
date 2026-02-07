@@ -127,4 +127,6 @@ if menu == "📈 我的資產":
 
             st.subheader("📊 持股明細")
             df_show = pd.DataFrame(results)
-            st.dataframe(df_show, use
+            st.dataframe(df_show, use)
+            
+
