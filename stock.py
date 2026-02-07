@@ -5,7 +5,7 @@ import plotly.express as px
 import json, os, hashlib
 from io import BytesIO
 
-# --- 1. 後端 ---
+# --- 1. DATA ---
 F = "data.json"
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -17,16 +17,16 @@ def lod():
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
-# --- 2. 登入 ---
+# --- 2. LOGIN ---
 st.set_page_config(layout="wide")
 if 'db' not in st.session_state: st.session_state.db = lod()
 u = st.session_state.get('u')
 
 if not u:
-    st.title("🛡️ 家族投資系統")
-    id = st.sidebar.text_input("帳號")
-    pw = st.sidebar.text_input("密碼", type="password")
-    if st.sidebar.button("登入"):
+    st.title("🛡️ Family Stock System")
+    id = st.sidebar.text_input("ID")
+    pw = st.sidebar.text_input("PW", type="password")
+    if st.sidebar.button("Login"):
         if id and pw:
             ph = hsh(pw)
             if id not in st.session_state.db:
@@ -37,24 +37,23 @@ if not u:
                 st.rerun()
     st.stop()
 
-# --- 3. 選單 ---
-st.sidebar.write(f"👤 {u}")
-m = st.sidebar.radio("選單", ["資產", "工具"])
-if st.sidebar.button("登出"):
+# --- 3. MENU ---
+st.sidebar.write(f"USER: {u}")
+m = st.sidebar.radio("MENU", ["Stock", "Tool"])
+if st.sidebar.button("Logout"):
     st.session_state.u = None
     st.rerun()
 
-# --- 4. 資產 ---
-if m == "資產":
+# --- 4. STOCK ---
+if m == "Stock":
     st.title("📈 儀表板")
-    with st.expander("➕ 新增"):
+    with st.expander("Add New"):
         with st.form("f", clear_on_submit=True):
-            c1,c2,c3 = st.columns(3)
-            n = c1.text_input("名稱")
-            t = c2.text_input("代碼")
-            p = c3.number_input("買價", min_value=0.0)
-            q = c1.number_input("股數", min_value=1)
-            if st.form_submit_button("存入"):
+            n = st.text_input("Name")
+            t = st.text_input("Code (e.g. 2330.TW)")
+            p = st.number_input("Price", min_value=0.0)
+            q = st.number_input("Qty", min_value=1)
+            if st.form_submit_button("Save"):
                 if n and t:
                     st.session_state.db[u]["s"].append({"n":n,"t":t.upper(),"p":p,"q":q})
                     sav(st.session_state.db)
@@ -66,17 +65,42 @@ if m == "資產":
         for i in sk:
             try:
                 o = yf.Ticker(i["t"])
-                c = round(o.history(period="1d")["Close"].iloc[-1], 2)
+                h = o.history(period="1d")
+                c = round(h["Close"].iloc[-1], 2)
                 v = round(c * i["q"])
-                res.append({"股票":i["n"],"現價":c,"市值":v,"代碼":i["t"]})
+                res.append({"Name":i["n"],"Price":c,"Value":v,"Code":i["t"]})
             except: continue
         
         if res:
             df = pd.DataFrame(res)
             st.dataframe(df, use_container_width=True)
             
-            # Excel
+            # Excel Export
             bio = BytesIO()
             with pd.ExcelWriter(bio, engine='xlsxwriter') as w:
                 df.to_excel(w, index=False)
-            st.download_button("📥 匯出
+            st.download_button("Download Excel", bio.getvalue(), "list.xlsx")
+
+            st.divider()
+            l, r = st.columns(2)
+            l.plotly_chart(px.pie(df, values='Value', names='Name', title="Asset Pie"), use_container_width=True)
+            with r:
+                sel = st.selectbox("View Trend", df["Name"].tolist())
+                cod = df[df["Name"]==sel]["Code"].values[0]
+                hd = yf.Ticker(cod).history(period="6mo")
+                if not hd.empty:
+                    st.plotly_chart(px.line(hd, y="Close", title=sel), use_container_width=True)
+            
+            if st.sidebar.button("Clear All"):
+                st.session_state.db[u]["s"] = []
+                sav(st.session_state.db)
+                st.rerun()
+    else: st.info("No Data")
+
+# --- 5. TOOL ---
+elif m == "Tool":
+    st.title("🧮 成本攤平")
+    p1 = st.number_input("Old Price", value=100.0)
+    q1 = st.number_input("Old Qty", value=1000)
+    p2 = st.number_input("New Price", value=90.0)
+    q2
