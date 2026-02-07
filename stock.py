@@ -5,15 +5,7 @@ import plotly.express as px
 import json, os, hashlib
 from io import BytesIO
 
-# --- 0. 中文標籤 (放在最前面，防止後方截斷報錯) ---
-T1 = "🛡️ 家族投資系統"
-T2 = "資產管理"
-T3 = "股利日曆"
-T4 = "攤平計算"
-T5 = "📈 投資儀表板"
-T6 = "歷史走勢 (半年)"
-
-# --- 1. 後端 ---
+# --- 1. 後端與安全 ---
 F = "data.json"
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -24,16 +16,25 @@ def lod():
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
-# --- 2. 登入 ---
-st.set_page_config(page_title="家族投資", layout="wide")
+# --- 2. 頁面風格設定 (還原美化) ---
+st.set_page_config(page_title="家族投資管理系統", layout="wide")
+st.markdown("""<style>
+    div[data-testid="metric-container"] {
+        background-color: rgba(28, 131, 225, 0.1);
+        border: 1px solid rgba(28, 131, 225, 0.3);
+        padding: 15px; border-radius: 15px;
+    }
+</style>""", unsafe_allow_html=True)
+
 if 'db' not in st.session_state: st.session_state.db = lod()
 u = st.session_state.get('u')
 
+# --- 3. 登入介面 (還原原本中文) ---
 if not u:
-    st.title(T1)
-    uid = st.sidebar.text_input("帳號")
-    upw = st.sidebar.text_input("密碼", type="password")
-    if st.sidebar.button("登入"):
+    st.title("🛡️ 家族投資管理系統")
+    uid = st.sidebar.text_input("請輸入帳號")
+    upw = st.sidebar.text_input("請輸入密碼", type="password")
+    if st.sidebar.button("登入 / 註冊"):
         if uid and upw:
             ph=hsh(upw); db=st.session_state.db
             if uid not in db: db[uid]={"p":ph,"s":[]}; sav(db)
@@ -42,28 +43,40 @@ if not u:
                 st.rerun()
     st.stop()
 
-# --- 3. 選單 ---
-st.sidebar.write(f"👤 {u}")
-m = st.sidebar.radio("選單", [T2, T3, T4])
-if st.sidebar.button("登出"): 
+# --- 4. 側邊選單 ---
+st.sidebar.write(f"👤 使用者: **{u}**")
+m = st.sidebar.radio("功能選單", ["📊 資產管理", "📅 股利日曆", "🧮 攤平工具"])
+if st.sidebar.button("安全登出"):
     st.session_state.u=None
     st.rerun()
 
-# --- 4. 資產管理 ---
-if m == T2:
-    st.title(T5)
-    with st.expander("📝 新增"):
-        with st.form("f"):
-            n = st.text_input("股票名稱")
-            t = st.text_input("代碼(例:2330.TW)")
-            p = st.number_input("買價", value=0.0)
-            q = st.number_input("股數", value=1.0)
-            tg = st.number_input("停利價", value=0.0)
-            sp = st.number_input("停損價", value=0.0)
-            dv = st.number_input("單股股利", value=0.0)
-            if st.form_submit_button("儲存"):
+# --- 5. 資產管理頁面 (功能 & 漲跌圖回歸) ---
+if m == "📊 資產管理":
+    st.title("📈 我的投資即時儀表板")
+    with st.expander("➕ 新增持股資料"):
+        with st.form("add_form"):
+            c1, c2 = st.columns(2)
+            n = c1.text_input("股票名稱 (例：台積電)")
+            t = c1.text_input("代碼 (例：2330.TW)")
+            p = c2.number_input("買入平均價格", min_value=0.0)
+            q = c2.number_input("持有股數", min_value=1.0)
+            tg = c1.number_input("停利目標價", min_value=0.0)
+            sp = c2.number_input("停損預警價", min_value=0.0)
+            dv = c2.number_input("預估年股利 (單股)", min_value=0.0)
+            if st.form_submit_button("儲存至清單"):
                 if n and t:
-                    st.session_state.db[u]["s"].append({"n":n,"t":t.upper(),"p":p,"q":q,"tg":tg,"sp":sp,"dv":dv})
+                    st.session_state.db[u]["s"].append(
+                        {"n":n,"t":t.upper(),"p":p,"q":q,"tg":tg,"sp":sp,"dv":dv}
+                    )
                     sav(st.session_state.db); st.rerun()
 
     sk = st.session_state.db[u].get("s", [])
+    if sk:
+        res = []
+        with st.spinner('同步最新數據中...'):
+            for i in sk:
+                try:
+                    tk=yf.Ticker(i["t"]); h=tk.history(period="1d")
+                    curr=round(h["Close"].iloc[-1],2)
+                    stt="⚖️ 穩定"
+                    if i.get("tg") and
