@@ -2,73 +2,110 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.express as px
-import json
-import os
-import hashlib
+import json, os, hashlib
 from io import BytesIO
 
-# --- 1. 基本設定 ---
-DB_FILE = "users_stock_data.json"
-def make_hash(p): return hashlib.sha256(str.encode(p)).hexdigest()
-def load_data():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f: return json.load(f)
-        except: return {}
+# --- 1. 後端 ---
+F = "data.json"
+def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
+def lod():
+    if os.path.exists(F):
+        with open(F, "r", encoding="utf-8") as f: return json.load(f)
     return {}
-def save_data(data):
-    with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=4)
+def sav(d):
+    with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
-# --- 2. 登入邏輯 ---
-st.set_page_config(page_title="家族投資究極系統", layout="wide")
-if 'all_data' not in st.session_state: st.session_state.all_data = load_data()
-user = st.session_state.get('user', None)
+# --- 2. 登入 ---
+st.set_page_config(layout="wide")
+if 'db' not in st.session_state: st.session_state.db = lod()
+u = st.session_state.get('u')
 
-if not user:
-    st.title("🛡️ 家族投資管理系統")
-    u_in = st.sidebar.text_input("帳號")
-    p_in = st.sidebar.text_input("密碼", type="password")
-    if st.sidebar.button("登入 / 註冊"):
-        if u_in and p_in:
-            h = make_hash(p_in)
-            if u_in not in st.session_state.all_data:
-                st.session_state.all_data[u_in] = {"password": h, "stocks": []}
-                save_data(st.session_state.all_data)
-            if st.session_state.all_data[u_in]["password"] == h:
-                st.session_state.user = u_in
+if not u:
+    st.title("🛡️ 家族投資系統")
+    id = st.sidebar.text_input("帳號")
+    pw = st.sidebar.text_input("密碼", type="password")
+    if st.sidebar.button("登入/註冊"):
+        if id and pw:
+            p_h = hsh(pw)
+            if id not in st.session_state.db:
+                st.session_state.db[id] = {"p": p_h, "s": []}
+                sav(st.session_state.db)
+            if st.session_state.db[id]["p"] == p_h:
+                st.session_state.u = id
                 st.rerun()
     st.stop()
 
 # --- 3. 選單 ---
-st.sidebar.title(f"👤 {user}")
-menu = st.sidebar.radio("功能", ["📈 我的資產", "🧮 成本攤平", "📅 行事曆"])
+st.sidebar.write(f"👤 {u}")
+m = st.sidebar.radio("選單", ["資產", "計算", "日曆"])
 if st.sidebar.button("登出"):
-    del st.session_state.user
+    st.session_state.u = None
     st.rerun()
 
-# --- 4. 我的資產 ---
-if menu == "📈 我的資產":
+# --- 4. 資產頁面 ---
+if m == "資產":
     st.title("📈 投資儀表板")
-    with st.expander("📝 新增持股"):
-        with st.form("add_form", clear_on_submit=True):
+    with st.expander("➕ 新增"):
+        with st.form("a", clear_on_submit=True):
             c1, c2, c3 = st.columns(3)
-            name = c1.text_input("股票名稱")
-            code = c2.text_input("代碼 (如 2330.TW)")
-            b_p = c3.number_input("買入均價", min_value=0.0)
-            qty = c1.number_input("股數", min_value=1)
-            if st.form_submit_button("➕ 存入"):
-                if name and code:
-                    st.session_state.all_data[user]["stocks"].append({
-                        "name": name, "code": code.upper(), "buy_price": b_p, "qty": qty
-                    })
-                    save_data(st.session_state.all_data)
+            n = c1.text_input("名稱")
+            t = c2.text_input("代碼")
+            p = c3.number_input("買價", min_value=0.0)
+            q = c1.number_input("股數", min_value=1)
+            if st.form_submit_button("存入"):
+                if n and t:
+                    st.session_state.db[u]["s"].append({"n":n,"t":t.upper(),"p":p,"q":q})
+                    sav(st.session_state.db)
                     st.rerun()
 
-    stocks = st.session_state.all_data[user]["stocks"]
-    if stocks:
-        res_list = []
-        with st.spinner('讀取中...'):
-            for s in stocks:
-                try:
-                    tk = yf.Ticker(s["code"])
-                    curr = round(tk.history(period="1
+    sk = st.session_state.db[u]["s"]
+    if sk:
+        res = []
+        for i in sk:
+            try:
+                # 這裡最關鍵，拆開寫防止截斷
+                obj = yf.Ticker(i["t"])
+                d = obj.history(period="1d")
+                c = round(d["Close"].iloc[-1], 2)
+                v = round(c * i["q"])
+                res.append({"股票":i["n"], "現價":c, "市值":v, "代碼":i["t"]})
+            except: continue
+        
+        if res:
+            df = pd.DataFrame(res)
+            st.dataframe(df, use_container_width=True)
+            st.divider()
+            l, r = st.columns(2)
+            l.plotly_chart(px.pie(df, values='市值', names='股票', title="比例"), use_container_width=True)
+            
+            with r:
+                sel = st.selectbox("查看走勢", df["股票"].tolist())
+                cod = df[df["股票"] == sel]["代碼"].values[0]
+                h_d = yf.Ticker(cod).history(period="6mo")
+                if not h_d.empty:
+                    st.plotly_chart(px.line(h_d, y="Close", title=f"{sel} 半年走勢"), use_container_width=True)
+
+            if st.button("🗑️ 清空所有持股"):
+                st.session_state.db[u]["s"] = []
+                sav(st.session_state.db)
+                st.rerun()
+    else: st.info("尚無資料")
+
+# --- 5. 計算器 ---
+elif m == "計算":
+    st.title("🧮 成本攤平")
+    p1 = st.number_input("原價", value=100.0)
+    q1 = st.number_input("原量", value=1000)
+    p2 = st.number_input("加碼", value=90.0)
+    q2 = st.number_input("加量", value=1000)
+    res = ((p1*q1)+(p2*q2))/(q1+q2)
+    st.metric("新均價", f"{round(res, 2)}")
+
+# --- 6. 日曆 ---
+elif m == "日曆":
+    st.title("📅 財經日曆")
+    for i in st.session_state.db[u]["s"]:
+        try:
+            cl = yf.Ticker(i["t"]).calendar
+            if not cl.empty: st.write(f"{i['n']}: {cl.iloc[0,0]}")
+        except: continue
