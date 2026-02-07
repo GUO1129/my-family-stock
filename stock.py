@@ -105,4 +105,5 @@ if m == "📊 資產管理":
                 sel = st.selectbox(T_CHT, df["股票"].tolist())
                 cod = df[df["股票"]==sel]["代碼"].values[0]
                 hd = yf.Ticker(cod).history(period="6mo")
-                if not hd.empty: st.plotly_chart(px.line(hd,
+                if not hd.empty: st.plotly_chart(px.line(hd,)
+
