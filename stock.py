@@ -68,7 +68,6 @@ fee_discount = st.sidebar.slider("手續費折數", 0.1, 1.0, 0.28, 0.01)
 if menu == "📈 我的資產":
     st.title(f"📈 {current_user} 的投資即時儀表板")
     
-    # 股票輸入區 (隱藏在 Expander 裡讓畫面乾淨)
     with st.expander("📝 新增/修改持股資料"):
         with st.form("add_form", clear_on_submit=True):
             col1, col2, col3 = st.columns(3)
@@ -101,7 +100,6 @@ if menu == "📈 我的資產":
                     curr = round(df['Close'].iloc[-1], 2)
                     div_yield = info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0
                     
-                    # 警示邏輯
                     status = "⚖️ 穩定"
                     if s.get("target", 0) > 0 and curr >= s["target"]: status = "🎯 達標(停利)"
                     elif s.get("stop", 0) > 0 and curr <= s["stop"]: status = "⚠️ 破底(停損)"
@@ -115,7 +113,6 @@ if menu == "📈 我的資產":
                     total_mkt_val += mkt_val
                     total_cost_sum += (s["buy_price"] * s["qty"])
 
-        # 頂部儀表板
         c1, c2, c3 = st.columns(3)
         c1.metric("總市值", f"{round(total_mkt_val):,} 元")
         c2.metric("總損益", f"{round(total_mkt_val - total_cost_sum):,} 元", delta=f"{round(total_mkt_val - total_cost_sum)}")
@@ -125,27 +122,6 @@ if menu == "📈 我的資產":
         df_show = pd.DataFrame(results)
         st.dataframe(df_show, use_container_width=True)
 
-        # 圖表展示
         col_a, col_b = st.columns(2)
         with col_a:
-            st.plotly_chart(px.pie(df_show, values='市值', names='股票', hole=0.5, title="資產分配"), use_container_width=True)
-        with col_b:
-            st.plotly_chart(px.line(yf.Ticker(results[0]["代碼"]).history(period="6mo"), y="Close", title=f"{results[0]['股票']} 半年走勢"), use_container_width=True)
-        
-        # 匯出按鈕
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df_show.to_excel(writer, index=False)
-        st.download_button("📥 匯出 Excel 報表", output.getvalue(), f"{current_user}_stocks.xlsx")
-
-    else: st.info("目前清單是空的。")
-
-# --- 5. 功能：成本攤平計算器 ---
-elif menu == "🧮 成本攤平計算器":
-    st.title("🧮 成本攤平計算器")
-    st.markdown("當股價下跌時，算算看再買一張，成本會降低多少？")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("💡 目前持股")
-        old_price = st.number_input("目前買入均價", min_value=
+            st.plotly_chart(px.pie(df_show, values='市值', names='股票', hole=0.5, title
