@@ -5,7 +5,7 @@ import plotly.express as px
 import json, os, hashlib
 from io import BytesIO
 
-# --- 1. 後端資料處理 ---
+# --- 1. 後端資料 ---
 F = "data.json"
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -16,19 +16,37 @@ def lod():
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
-# --- 2. 介面樣式 ---
+# --- 2. 介面樣式：強制明亮模式 (防止手機黑屏) ---
 st.set_page_config(page_title="家族投資系統", layout="wide")
 st.markdown("""
 <style>
-    .stApp { background-color: #FFFFFF; }
-    p, label, span { color: #000000 !important; font-weight: 500; }
-    h1, h2, h3 { color: #1E3A8A !important; }
-    [data-testid="stMetric"] {
-        background-color: #F8FAFC !important;
-        border: 1px solid #3182ce !important;
-        border-radius: 12px;
+    /* 強制網頁背景與文字，無視手機系統深色模式 */
+    :root { color-scheme: light; }
+    
+    .stApp { 
+        background-color: #FFFFFF !important; 
     }
-    .stButton>button { border-radius: 8px; }
+    
+    /* 所有文字強制黑色 */
+    .main .block-container p, 
+    .main .block-container label, 
+    .main .block-container span,
+    .main .block-container div { 
+        color: #000000 !important; 
+    }
+    
+    /* 標題與 Metric 數值 */
+    h1, h2, h3 { color: #1E3A8A !important; }
+    [data-testid="stMetricValue"] { color: #2563EB !important; }
+    [data-testid="stMetricLabel"] p { color: #64748B !important; }
+
+    /* 側邊欄強制淺色 */
+    [data-testid="stSidebar"] { background-color: #F8FAFC !important; }
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] label { color: #000000 !important; }
+
+    /* 表格與輸入框文字修正 */
+    .stDataFrame div, .stDataFrame span { color: #000000 !important; }
+    input { color: #000000 !important; background-color: #FFFFFF !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -55,6 +73,8 @@ m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "📅 股利日曆
 if st.sidebar.button("🔒 安全登出", use_container_width=True): 
     st.session_state.u=None; st.rerun()
 
+sk = st.session_state.db[u].get("s", [])
+
 # --- 5. 功能：資產儀表板 ---
 if m == "📈 資產儀表板":
     st.title("💎 持股戰情室")
@@ -74,7 +94,6 @@ if m == "📈 資產儀表板":
                     st.session_state.db[u]["s"].append({"n":n,"t":t.upper(),"p":p,"q":q,"tg":tg,"sp":sp,"dv":dv})
                     sav(st.session_state.db); st.rerun()
 
-    sk = st.session_state.db[u].get("s", [])
     if sk:
         res = []
         for i in sk:
@@ -95,9 +114,8 @@ if m == "📈 資產儀表板":
             df = pd.DataFrame(res)
             st.dataframe(df, use_container_width=True)
             
-            # --- 數據匯出功能 ---
             csv = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(label="📥 下載完整資產報表 (CSV)", data=csv, file_name=f'my_assets_{u}.csv', mime='text/csv')
+            st.download_button(label="📥 下載完整資產報表 (CSV)", data=csv, file_name=f'assets_{u}.csv', mime='text/csv')
 
             st.markdown("### 📊 財務總覽")
             ca, cb, cc = st.columns(3)
@@ -107,17 +125,13 @@ if m == "📈 資產儀表板":
             
             st.divider()
             
-            # --- 批量管理/刪除模式 ---
             with st.expander("🗑️ 管理/刪除持股"):
-                st.warning("請謹慎操作，刪除後無法復原。")
-                stocks_to_delete = []
                 for idx, item in enumerate(sk):
                     col_a, col_b = st.columns([4, 1])
-                    col_a.write(f"**{item['n']}** ({item['t']}) - 成本: {item['p']} / 股數: {item['q']}")
+                    col_a.write(f"**{item['n']}** ({item['t']})")
                     if col_b.button("刪除", key=f"del_{idx}"):
                         st.session_state.db[u]["s"].pop(idx)
-                        sav(st.session_state.db)
-                        st.rerun()
+                        sav(st.session_state.db); st.rerun()
 
             st.divider()
             l, r = st.columns([1, 1.5])
@@ -130,7 +144,7 @@ if m == "📈 資產儀表板":
                 if not h.empty:
                     st.plotly_chart(px.line(h, y="Close", title=f"{sel} 趨勢"), use_container_width=True)
     else:
-        st.info("目前清單為空。")
+        st.info("清單為空。")
 
 # --- 6. 股利日曆 ---
 elif m == "📅 股利日曆":
@@ -144,7 +158,7 @@ elif m == "📅 股利日曆":
                     ev.append({"股票": i["n"], "日期": c.iloc[0, 0].strftime('%Y-%m-%d')})
             except: continue
         if ev: st.table(pd.DataFrame(ev))
-        else: st.info("無近期事件。")
+        else: st.info("近期無重大事件。")
 
 # --- 7. 攤平計算機 ---
 elif m == "🧮 攤平計算機":
