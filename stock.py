@@ -15,8 +15,10 @@ def make_hash(password):
 
 def load_all_data():
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except: return {}
     return {}
 
 def save_all_data(all_data):
@@ -41,6 +43,7 @@ if not current_user:
         if user_id_input and password_input:
             pw_hash = make_hash(password_input)
             if user_id_input not in st.session_state.all_data:
+                # 記憶功能：根據使用者要求，為每個新帳號提供密碼保護
                 st.session_state.all_data[user_id_input] = {"password": pw_hash, "stocks": []}
                 save_all_data(st.session_state.all_data)
                 st.session_state.current_user = user_id_input
@@ -71,19 +74,4 @@ if menu == "📈 我的資產":
     
     with st.expander("📝 新增持股資料"):
         with st.form("add_new_stock_form", clear_on_submit=True):
-            col1, col2, col3 = st.columns(3)
-            name = col1.text_input("股票名稱 (例: 台積電 / Apple)")
-            code = col2.text_input("代碼 (台股加 .TW, 美股直接輸入, 例: 2330.TW / AAPL)")
-            buy_price = col3.number_input("買入均價", min_value=0.0)
-            qty = col1.number_input("股數", min_value=1)
-            target = col2.number_input("停利價", min_value=0.0)
-            stop = col3.number_input("停損價", min_value=0.0)
-            submit_clicked = st.form_submit_button("➕ 加入清單")
-            
-            if submit_clicked:
-                if name and code:
-                    st.session_state.all_data[current_user]["stocks"].append({
-                        "name": name, "code": code.upper(), "buy_price": buy_price, 
-                        "qty": qty, "target": target, "stop": stop
-                    })
-                    save_all_data(st
+            col1, col2
