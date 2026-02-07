@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 import json, os, hashlib
 from io import BytesIO
+
 # --- 1. 後端 ---
 F = "data.json"
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
@@ -14,9 +15,19 @@ def lod():
     except: return {}
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
-# --- 2. 登入與設定 ---
+
+# --- 2. 登入與風格設定 ---
 st.set_page_config(page_title="家族投資", layout="wide")
-st.markdown("<style>.stMetric{background-color:#1e2130;padding:10px;border-radius:10px;}</style>",unsafe_allow_html=True)
+# 移除原本黑黑的背景，改用邊框美化
+st.markdown("""<style>
+    div[data-testid="metric-container"] {
+        background-color: rgba(28, 131, 225, 0.1);
+        border: 1px solid rgba(28, 131, 225, 0.3);
+        padding: 15px; border-radius: 15px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    }
+</style>""", unsafe_allow_html=True)
+
 if 'db' not in st.session_state: st.session_state.db = lod()
 u = st.session_state.get('u')
 if not u:
@@ -29,21 +40,23 @@ if not u:
             if uid not in db: db[uid]={"p":ph,"s":[]}; sav(db)
             if db[uid]["p"]==ph: st.session_state.u=uid; st.rerun()
     st.stop()
+
 # --- 3. 選單 ---
-st.sidebar.write(f"👤 {u}")
+st.sidebar.write(f"👤 使用者: **{u}**")
 m = st.sidebar.radio("選單", ["資產管理", "股利日曆", "攤平計算"])
 if st.sidebar.button("登出"): st.session_state.u=None; st.rerun()
+
 # --- 4. 資產管理 ---
 if m == "資產管理":
     st.title("📈 投資儀表板")
-    with st.expander("📝 新增持股"):
+    with st.expander("📝 新增持股項目"):
         with st.form("f"):
             c1,c2=st.columns(2)
-            n=c1.text_input("名稱"); t=c1.text_input("代碼(例:2330.TW)")
-            p=c2.number_input("買價"); q=c2.number_input("股數",min_value=1.0)
+            n=c1.text_input("股票名稱"); t=c1.text_input("代碼(例:2330.TW)")
+            p=c2.number_input("平均買價"); q=c2.number_input("持有股數",min_value=1.0)
             tg=c1.number_input("停利價"); sp=c2.number_input("停損價")
-            dv=c1.number_input("年股利(單股)")
-            if st.form_submit_button("儲存"):
+            dv=c1.number_input("單股預估年股利")
+            if st.form_submit_button("儲存至清單"):
                 if n and t:
                     st.session_state.db[u]["s"].append({"n":n,"t":t.upper(),"p":p,"q":q,"tg":tg,"sp":sp,"dv":dv})
                     sav(st.session_state.db); st.rerun()
@@ -61,35 +74,19 @@ if m == "資產管理":
             except: continue
         if res:
             df=pd.DataFrame(res); st.dataframe(df,use_container_width=True)
-            ca,cb=st.columns(2); ca.metric("總市值",f"{df['市值'].sum():,}"); cb.metric("總股利",f"{df['年股利'].sum():,}")
+            # 美化後的總結欄位
+            st.write("### 💰 財務總結")
+            ca,cb,cc = st.columns(3)
+            ca.metric("💎 總市值", f"{df['市值'].sum():,} 元")
+            cb.metric("🧧 總股利", f"{df['年股利'].sum():,} 元")
+            cc.metric("📊 總盈虧", f"{df['損益'].sum():,} 元", delta=f"{df['損益'].sum():,}")
+            
             # Excel
             bio=BytesIO()
             with pd.ExcelWriter(bio,engine='xlsxwriter') as w: df.to_excel(w,index=False)
-            st.download_button("📥 匯出Excel",bio.getvalue(),"list.xlsx")
+            st.download_button("📥 匯出Excel報表",bio.getvalue(),"list.xlsx")
             st.divider(); l,r=st.columns(2)
-            l.plotly_chart(px.pie(df,values='市值',names='股票',title="比例"),use_container_width=True)
+            l.plotly_chart(px.pie(df,values='市值',names='股票',title="資產佔比比例"),use_container_width=True)
             with r:
-                sel=st.selectbox("走勢圖",df["股票"].tolist())
-                cod=df[df["股票"]==sel]["代碼"].values[0]
-                hd=yf.Ticker(cod).history(period="6mo")
-                if not hd.empty: st.plotly_chart(px.line(hd,y="Close",title=sel),use_container_width=True)
-            if st.sidebar.button("🗑️ 清空紀錄"): st.session_state.db[u]["s"]=[]; sav(st.session_state.db); st.rerun()
-    else: st.info("空清單")
-# --- 5. 日曆 ---
-elif m == "股利日曆":
-    st.title("📅 財經日曆")
-    sk=st.session_state.db[u].get("s",[])
-    ev=[]
-    for i in sk:
-        try:
-            cl=yf.Ticker(i["t"]).calendar
-            if cl is not None and not cl.empty: ev.append({"股票":i["n"],"日期":cl.iloc[0,0].strftime('%Y-%m-%d')})
-        except: continue
-    if ev: st.table(pd.DataFrame(ev))
-    else: st.info("無事件")
-# --- 6. 攤平 ---
-elif m == "攤平計算":
-    st.title("🧮 攤平工具")
-    p1=st.number_input("原價",value=100.0); q1=st.number_input("原量",value=1000.0)
-    p2=st.number_input("新價",value=90.0); q2=st.number_input("新量",value=1000.0)
-    st.metric("新成本",round(((p1*q1)+(p2*q2))/(q1+q2),2))
+                sel=st.selectbox("查看歷史走勢",df["股票"].tolist())
+                cod=df[df["股票"]==sel]["代碼"].values
