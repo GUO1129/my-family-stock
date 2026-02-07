@@ -43,4 +43,127 @@ st.markdown("""
     
     /* 卡片與輸入框 */
     [data-testid="stMetric"] {
-        background: rgba(255, 255, 255, 0.
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 15px;
+    }
+    input, .stSelectbox div {
+        background-color: #1e293b !important;
+        color: white !important;
+        border: 1px solid #475569 !important;
+    }
+    /* 修正表格中的文字對比度 */
+    div[data-testid="stExpander"] div { color: white !important; }
+</style>
+""", unsafe_allow_html=True)
+
+if 'db' not in st.session_state: st.session_state.db = lod()
+u = st.session_state.get('u')
+
+# --- 3. 登入系統 ---
+if not u:
+    st.markdown("<h1 style='text-align: center; color: #ffffff;'>🛡️ 家族投資安全門戶</h1>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1, 1.5, 1])
+    with c2:
+        uid = st.text_input("👤 帳號")
+        upw = st.text_input("🔑 密碼", type="password")
+        if st.button("啟動系統"):
+            if uid and upw:
+                ph=hsh(upw); db=st.session_state.db
+                if uid not in db: db[uid]={"p":ph,"s":[]}; sav(db)
+                if db[uid]["p"]==ph: 
+                    st.session_state.u=uid; st.rerun()
+    st.stop()
+
+# --- 4. 側邊導覽 ---
+st.sidebar.markdown(f"### 🚀 歡迎, {u}")
+m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "📅 股利日曆", "🧮 攤平計算機"])
+if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
+sk = st.session_state.db[u].get("s", [])
+
+# --- 5. 資產儀表板 ---
+if m == "📈 資產儀表板":
+    st.markdown("<h2 style='color: #60a5fa;'>💎 持股戰情中心</h2>", unsafe_allow_html=True)
+    with st.expander("📝 點擊展開：新增持股"):
+        c1, c2 = st.columns(2)
+        n = c1.text_input("名稱"); t = c1.text_input("代碼(例:2330.TW)")
+        p = c2.number_input("平均成本", 0.0); q = c2.number_input("持有股數", 1.0)
+        tg = c1.number_input("停利目標", 0.0); sp = c2.number_input("停損預警", 0.0)
+        dv = c2.number_input("年股利(單股)", 0.0)
+        if st.button("✨ 確認存入"):
+            if n and t:
+                st.session_state.db[u]["s"].append({"n":n,"t":t.upper(),"p":p,"q":q,"tg":tg,"sp":sp,"dv":dv})
+                sav(st.session_state.db); st.rerun()
+
+    if sk:
+        res = []
+        for i in sk:
+            try:
+                tk = yf.Ticker(i["t"]); df_h = tk.history(period="1d")
+                curr = round(df_h["Close"].values[-1], 2)
+                tg_p = i.get("tg", 0); sp_p = i.get("sp", 0)
+                dt = f"{round(((tg_p-curr)/curr)*100,1)}%" if tg_p > 0 else "-"
+                ds = f"{round(((sp_p-curr)/curr)*100,1)}%" if sp_p > 0 else "-"
+                stt = "⚖️ 穩定"
+                if tg_p > 0 and curr >= tg_p: stt = "🎯 停利"
+                elif sp_p > 0 and curr <= sp_p: stt = "⚠️ 停損"
+                mv = round(curr * i["q"]); pf = mv - (i["p"] * i["q"])
+                res.append({"股票":i["n"],"現價":curr,"狀態":stt,"距停利":dt,"距停損":ds,"市值":mv,"損益":int(pf),"年股利":round(i.get("dv",0)*i["q"]),"代碼":i["t"]})
+            except: continue
+        
+        if res:
+            df = pd.DataFrame(res)
+            # 強制使用高對比表格顯示
+            st.dataframe(df, use_container_width=True)
+            
+            st.markdown("### 📊 關鍵財務指標")
+            ca, cb, cc = st.columns(3)
+            ca.metric("總市值", f"{df['市值'].sum():,} 元")
+            cb.metric("總盈虧", f"{df['損益'].sum():,} 元", delta=int(df['損益'].sum()))
+            cc.metric("預計股利", f"{df['年股利'].sum():,} 元")
+            
+            st.markdown("---")
+            l, r = st.columns([1, 1.5])
+            with l:
+                fig_pie = px.pie(df, values='市值', names='股票', hole=0.5, title="資產配比")
+                fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+                st.plotly_chart(fig_pie, use_container_width=True)
+            with r:
+                sel = st.selectbox("分析歷史趨勢", df["股票"].tolist())
+                cod = df[df["股票"]==sel]["代碼"].values[0]
+                h = yf.Ticker(cod).history(period="6mo")
+                if not h.empty:
+                    fig_l = px.line(h, y="Close", title=f"{sel} 趨勢")
+                    fig_l.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+                    st.plotly_chart(fig_l, use_container_width=True)
+    else: st.info("目前尚無數據，請先新增股票。")
+
+# --- 6. 股利日曆 ---
+elif m == "📅 股利日曆":
+    st.title("📅 事件追蹤")
+    if sk:
+        ev = []
+        for i in sk:
+            try:
+                c = yf.Ticker(i["t"]).calendar
+                if c is not None and not c.empty:
+                    d_v = c.iloc[0, 0]
+                    if hasattr(d_v, 'strftime'):
+                        ev.append({"股票": i["n"], "日期": d_v.strftime('%Y-%m-%d')})
+            except: continue
+        if ev: st.table(pd.DataFrame(ev))
+        else: st.info("無近期事件。")
+
+# --- 7. 攤平計算機 ---
+elif m == "🧮 攤平計算機":
+    st.title("🧮 攤平計算")
+    st.markdown("<div style='background:rgba(255,255,255,0.08); padding:20px; border-radius:15px; border:1px solid rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    p1 = c1.number_input("原買入單價", value=100.0)
+    q1 = c1.number_input("原持有數量", value=1000.0)
+    p2 = c2.number_input("加碼單價", value=90.0)
+    q2 = c2.number_input("加碼數量", value=1000.0)
+    avg = round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)
+    st.divider()
+    st.metric("💡 攤平後預估成本", f"{avg} 元")
+    st.markdown("</div>", unsafe_allow_html=True)
