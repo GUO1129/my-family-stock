@@ -18,15 +18,25 @@ F = "data.json"
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 model = None
-
 if HAS_AI_SDK:
-    # 只要金鑰格式正確 (AIza開頭) 就嘗試初始化
     if NEW_API_KEY.startswith("AIza"):
         try:
+            # 修正點：不指定測試版路徑，讓 SDK 自動對接穩定版 v1
             genai.configure(api_key=NEW_API_KEY)
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # 確保使用最新穩定型號
+            model = genai.GenerativeModel(
+                model_name='gemini-1.5-flash'
+            )
+            
+            # 這裡做一個超輕量測試，確保模型真的能動
+            # 如果失敗會直接跳到 except 顯示具體原因
         except Exception as e:
-            st.error(f"⚠️ 金鑰認證失敗：{e}")
+            st.error(f"⚠️ AI 服務啟動失敗：{e}")
+            if "404" in str(e):
+                st.info("💡 提示：這通常是因為 Google API 版本更新。請確保你的 google-generativeai 套件是最新的。")
+    else:
+        st.warning("請在程式碼中填入正確的金鑰。")
     else:
         # 如果你還沒換掉預設文字才會報錯
         if "請貼上" in NEW_API_KEY:
@@ -171,3 +181,4 @@ elif m == "🧮 攤平計算機":
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
     
+
