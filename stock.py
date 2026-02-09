@@ -4,11 +4,16 @@ import pandas as pd
 import json, os, hashlib, time
 import plotly.express as px
 
-# 嘗試載入官方 AI 套件
+# --- 0. 嘗試載入官方 AI 套件 ---
 try:
     import google.generativeai as genai
+    HAS_AI_SDK = True
+except ImportError:
+    HAS_AI_SDK = False
+
 # --- 1. 後端資料核心 ---
 F = "data.json"
+# 這裡使用你提供的金鑰
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 model = None
@@ -17,21 +22,21 @@ if HAS_AI_SDK:
     if NEW_API_KEY.startswith("AIza"):
         try:
             genai.configure(api_key=NEW_API_KEY)
+            # 使用 gemini-1.5-flash 穩定版
             model = genai.GenerativeModel('gemini-1.5-flash')
         except Exception as e:
             st.error(f"⚠️ AI 配置失敗: {e}")
     else:
-        st.warning("⚠️ 請確認第 17 行的金鑰格式是否正確")
-# --- 初始化結束，確保下方定義正常 ---
+        st.warning("⚠️ 請確認程式碼中第 17 行的金鑰格式是否正確")
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 
-def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
     if not os.path.exists(F): return {}
     try:
         with open(F, "r", encoding="utf-8") as f: return json.load(f)
     except: return {}
+
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
@@ -77,7 +82,7 @@ if m == "🤖 AI 投資助手":
     if not HAS_AI_SDK:
         st.error("⚠️ 環境缺少套件，請確保 requirements.txt 包含 google-generativeai")
     elif model is None:
-        st.error("❌ AI 模型尚未初始化。請檢查第 18 行的金鑰是否正確。")
+        st.error("❌ AI 模型尚未初始化。請檢查金鑰是否正確。")
     else:
         p = st.chat_input("請輸入您的投資問題...")
         if p:
@@ -89,15 +94,17 @@ if m == "🤖 AI 投資助手":
                         ans = response.text
                         with st.chat_message("assistant"): st.write(ans)
                     else:
-                        st.error("AI 暫時無法回應。")
+                        st.error("AI 暫時無法回應內容，可能是內容觸發了安全過濾。")
             except Exception as e:
                 st.error(f"連線失敗：{e}")
 
 # --- 6. 資產儀表板 ---
 elif m == "📈 資產儀表板":
     st.title("💎 家族資產戰情室")
-    try: ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
-    except: ex_rate = 32.5
+    try:
+        ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
+    except:
+        ex_rate = 32.5
 
     sk = st.session_state.db[u].get("s", [])
     if sk:
@@ -116,7 +123,8 @@ elif m == "📈 資產儀表板":
                         pf = int(mv - (i.get("p", 0) * rate * i.get("q", 0)))
                         res.append({"名稱": i.get("n", ""), "代碼": sym, "現價": curr, "市值": mv, "損益": pf})
                         chart_data[i.get("n", "")] = hist["Close"]
-                except: continue
+                except:
+                    continue
         
         if res:
             df = pd.DataFrame(res)
@@ -162,6 +170,3 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
-    
-
-
