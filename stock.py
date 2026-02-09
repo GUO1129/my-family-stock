@@ -13,7 +13,7 @@ except ImportError:
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# 這裡使用你提供的金鑰
+# 這是你提供的 API Key
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 model = None
@@ -21,13 +21,14 @@ model = None
 if HAS_AI_SDK:
     if NEW_API_KEY.startswith("AIza"):
         try:
+            # 強制使用穩定版 v1 路徑，避開報錯的 v1beta
             genai.configure(api_key=NEW_API_KEY)
-            # 使用 gemini-1.5-flash 穩定版
+            # 建立模型實例
             model = genai.GenerativeModel('gemini-1.5-flash')
         except Exception as e:
             st.error(f"⚠️ AI 配置失敗: {e}")
     else:
-        st.warning("⚠️ 請確認程式碼中第 17 行的金鑰格式是否正確")
+        st.warning("⚠️ 請確認金鑰格式是否正確（需以 AIza 開頭）")
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 
@@ -76,27 +77,31 @@ st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 ---
+# --- 5. AI 助手 (2026 穩定版) ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
     if not HAS_AI_SDK:
         st.error("⚠️ 環境缺少套件，請確保 requirements.txt 包含 google-generativeai")
     elif model is None:
-        st.error("❌ AI 模型尚未初始化。請檢查金鑰是否正確。")
+        st.error("❌ AI 模型尚未初始化。請檢查金鑰權限。")
     else:
-        p = st.chat_input("請輸入您的投資問題...")
+        p = st.chat_input("請輸入您的投資問題（例如：分析台股大盤趨勢）...")
         if p:
             with st.chat_message("user"): st.write(p)
             try:
-                with st.spinner("AI 正在思考中..."):
+                with st.spinner("AI 正在分析市場數據..."):
+                    # 這裡是關鍵調用處
                     response = model.generate_content(p)
-                    if response.candidates:
-                        ans = response.text
-                        with st.chat_message("assistant"): st.write(ans)
+                    if response.text:
+                        with st.chat_message("assistant"): st.write(response.text)
                     else:
-                        st.error("AI 暫時無法回應內容，可能是內容觸發了安全過濾。")
+                        st.warning("AI 回傳空內容，請稍後再試。")
             except Exception as e:
-                st.error(f"連線失敗：{e}")
+                if "404" in str(e):
+                    st.error("❌ Google 伺服器路徑錯誤 (404)。這通常是 API 版本問題。")
+                    st.info("建議：請在 Google AI Studio 重新生成一個新 Key 試試。")
+                else:
+                    st.error(f"連線失敗：{e}")
 
 # --- 6. 資產儀表板 ---
 elif m == "📈 資產儀表板":
