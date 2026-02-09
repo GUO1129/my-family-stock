@@ -7,42 +7,24 @@ import plotly.express as px
 # 嘗試載入官方 AI 套件
 try:
     import google.generativeai as genai
-    HAS_AI_SDK = True
-except ImportError:
-    HAS_AI_SDK = False
-
 # --- 1. 後端資料核心 ---
 F = "data.json"
-
-# --- 這裡已經填入你的金鑰 ---
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 model = None
+
 if HAS_AI_SDK:
     if NEW_API_KEY.startswith("AIza"):
         try:
-            # 修正點：不指定測試版路徑，讓 SDK 自動對接穩定版 v1
             genai.configure(api_key=NEW_API_KEY)
-            
-            # 確保使用最新穩定型號
-            model = genai.GenerativeModel(
-                model_name='gemini-1.5-flash'
-            )
-            
-            # 這裡做一個超輕量測試，確保模型真的能動
-            # 如果失敗會直接跳到 except 顯示具體原因
+            model = genai.GenerativeModel('gemini-1.5-flash')
         except Exception as e:
-            st.error(f"⚠️ AI 服務啟動失敗：{e}")
-            if "404" in str(e):
-                st.info("💡 提示：這通常是因為 Google API 版本更新。請確保你的 google-generativeai 套件是最新的。")
+            st.error(f"⚠️ AI 配置失敗: {e}")
     else:
-        st.warning("請在程式碼中填入正確的金鑰。")
-    else:
-        # 如果你還沒換掉預設文字才會報錯
-        if "請貼上" in NEW_API_KEY:
-            pass 
-        else:
-            st.error("❌ 金鑰格式不正確！")
+        st.warning("⚠️ 請確認第 17 行的金鑰格式是否正確")
+# --- 初始化結束，確保下方定義正常 ---
+
+def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -181,4 +163,5 @@ elif m == "🧮 攤平計算機":
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
     
+
 
