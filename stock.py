@@ -6,7 +6,7 @@ import json, os, hashlib, requests
 # ==========================================
 # 🔑 後端金鑰設定區 (填好後，所有裝置登入皆免輸入)
 # 請將下面引號內換成你的 AIza... 金鑰
-BACKEND_GEMINI_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
+BACKEND_GEMINI_KEY ="AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 # ==========================================
 
 # --- 1. 後端資料核心邏輯 ---
@@ -196,3 +196,4 @@ elif m == "🧮 攤平計算機":
     if (q1 + q2) > 0:
         avg_res = round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)
         st.metric("💡 攤平後預估均價", f"{avg_res} 元")
+
