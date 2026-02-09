@@ -29,8 +29,8 @@ def ask_gemini(prompt):
             error_detail = result.get('error', {}).get('message', '未知錯誤')
             return f"❌ AI 服務暫時無法存取 ({response.status_code})\n原因：{error_detail}"
             
-    except Exception as e:
-        return f"⚠️ 連線異常: {str(e)}")}"
+except Exception as e:
+        return f"⚠️ 連線異常: {str(e)}"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -155,5 +155,6 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
+
 
 
