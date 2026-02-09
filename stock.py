@@ -10,28 +10,30 @@ F = "data.json"
 NEW_API_KEY = "AIzaSyCk5arpu7irr1q8tS2uCKEsINk6IqjVwLA" 
 
 def ask_gemini(prompt):
-    """自動嘗試不同模型路徑以避開 404 權限問題"""
-    # 優先順序：1.5-flash (v1) -> 1.5-flash (v1beta) -> 1.0-pro (v1)
-    endpoints = [
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={NEW_API_KEY}",
-        f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={NEW_API_KEY}"
-    ]
+    """手動透過 HTTP 連線 Google API (2026 穩定版)"""
+    # 對於新專案的 Key，v1beta/gemini-1.5-flash 是權限最開的路徑
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={NEW_API_KEY}"
     
-    last_error = ""
-    for url in endpoints:
-        try:
-            payload = {"contents": [{"parts": [{"text": prompt}]}]}
-            response = requests.post(url, json=payload, timeout=10)
-            result = response.json()
-            if response.status_code == 200:
-                return result['candidates'][0]['content']['parts'][0]['text']
-            else:
-                last_error = result.get('error', {}).get('message', '未知錯誤')
-        except Exception as e:
-            last_error = str(e)
-            continue
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        result = response.json()
+        
+        if response.status_code == 200:
+            # 成功回傳
+            return result['candidates'][0]['content']['parts'][0]['text']
+        else:
+            # 診斷錯誤原因
+            err_msg = result.get('error', {}).get('message', '未知錯誤')
+            if "404" in str(response.status_code):
+                return "❌ 權限同步中：請稍等 1 分鐘讓新 Key 生效，或確認是否已點選 'Create API key in NEW project'。"
+            return f"❌ API 錯誤 ({response.status_code}): {err_msg}"
             
-    return f"❌ 最終失敗：{last_error}\n💡 建議：此錯誤代表您的 API Key 無權限存取模型。請至 Google AI Studio 重新申請一個「新專案 (New Project)」的 Key。"
+    except Exception as e:
+        return f"⚠️ 連線異常: {str(e)}"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -154,4 +156,5 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
+
 
