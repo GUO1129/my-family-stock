@@ -14,32 +14,37 @@ else:
     STABLE_KEY = ""
 
 def ask_gemini(prompt):
-    """2026 終極自動偵測：針對 gemini-pro 找不到的報錯進行優化"""
+    """2026 終極暴力破解：遍歷所有可能路徑，直到 Google 點頭"""
     if not STABLE_KEY: return "❌ 未設定 API Key"
     
-    # 測試路徑：將 gemini-1.5-flash 放在最前面，並嘗試 v1 與 v1beta
-    test_configs = [
-        ("v1beta", "gemini-1.5-flash"), 
+    # 這是根據 2026 最新 API 變動整理出的「必中清單」
+    # 包含正式版(v1)與測試版(v1beta)，以及長短名稱
+    configs = [
         ("v1", "gemini-1.5-flash"),
-        ("v1beta", "gemini-1.5-flash-latest")
+        ("v1beta", "gemini-1.5-flash"),
+        ("v1", "gemini-pro"),
+        ("v1beta", "gemini-1.5-pro"),
     ]
     
-    refined_prompt = f"你是一位專業股票顧問。請針對以下問題給出短期漲跌預估：\n{prompt}"
+    refined_prompt = f"你是一位專業股票顧問，請針對以下問題提供漲跌預估分析：{prompt}"
     payload = {"contents": [{"parts": [{"text": refined_prompt}]}]}
     headers = {'Content-Type': 'application/json'}
     
     last_err = ""
-    for api_ver, model_id in test_configs:
-        url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_id}:generateContent?key={STABLE_KEY}"
+    for ver, model in configs:
+        url = f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={STABLE_KEY}"
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=12)
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
             result = response.json()
             if response.status_code == 200:
+                # 只要有一組成功，立刻回傳並結束循環
                 return result['candidates'][0]['content']['parts'][0]['text']
             else:
-                last_err = result.get('error', {}).get('message', '未知錯誤')
-        except: continue
-    return f"❌ AI 連線路徑皆失敗。最後報錯：{last_err}"
+                last_err = f"路徑 {ver}/{model} 報錯: {result.get('error', {}).get('message', '未知')}"
+        except:
+            continue
+            
+    return f"❌ 所有連線組合皆失敗。最後報錯原因：{last_err}\n💡 建議：請確認 API Key 是否在 Google AI Studio 點擊了 'Create API key in new project'。"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -50,11 +55,10 @@ def lod():
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
-# --- 2. 漲跌計算邏輯 ---
+# --- 2. 漲跌計算 ---
 def calc_limit(price, is_tw=True, direction="up"):
     change = 1.1 if direction == "up" else 0.9
-    raw = price * change
-    return round(raw, 2)
+    return round(price * change, 2)
 
 # --- 3. 頁面配置 ---
 st.set_page_config(page_title="家族投資戰情室", layout="wide")
@@ -62,7 +66,7 @@ st.set_page_config(page_title="家族投資戰情室", layout="wide")
 if 'db' not in st.session_state: st.session_state.db = lod()
 u = st.session_state.get('u')
 
-# --- 4. 登入系統 (落實密碼保護) ---
+# --- 4. 登入系統 (密碼保護) ---
 if not u:
     st.markdown("<h1 style='text-align: center;'>🛡️ 家族投資安全系統</h1>", unsafe_allow_html=True)
     _, c2, _ = st.columns([1, 1.2, 1])
@@ -81,19 +85,19 @@ if not u:
                 else: st.error("密碼錯誤")
     st.stop()
 
-# --- 5. 導覽選單 ---
+# --- 5. 導覽 ---
 st.sidebar.markdown(f"### 👤 使用者: **{u}**")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"):
     st.session_state.u = None; st.rerun()
 
-# --- 6. AI 助手頻道 ---
+# --- 6. AI 助手 ---
 if m == "🤖 AI 投資助手":
-    st.title("🤖 家族 AI 投資顧問")
+    st.title("🤖 家族 AI 顧問")
     p = st.chat_input("請輸入股票代碼或投資問題（例如：分析 2330.TW 的未來走勢）")
     if p:
         with st.chat_message("user"): st.write(p)
-        with st.spinner("AI 顧問正在預估漲跌..."):
+        with st.spinner("AI 顧問正在運算漲跌預估報告..."):
             ans = ask_gemini(p)
             with st.chat_message("assistant"): st.write(ans)
 
@@ -106,7 +110,7 @@ elif m == "📈 資產儀表板":
     sk = st.session_state.db[u].get("s", [])
     if sk:
         res = []
-        with st.spinner('同步市場數據中...'):
+        with st.spinner('同步市場報價中...'):
             for i in sk:
                 sym = i.get("t", "").strip().upper()
                 try:
@@ -131,17 +135,18 @@ elif m == "📈 資產儀表板":
             df = pd.DataFrame(res)
             st.metric("💰 總市值 (TWD)", f"{df['市值'].sum():,} 元", delta=f"總盈虧: {df['損益'].sum():,}")
             
-            # 表格高亮顏色
+            # 損益顏色顯示
             def color_pf(val):
                 return f'color: {"#4ade80" if val >= 0 else "#f87171"}; font-weight: bold'
-            
             st.dataframe(df.style.map(color_pf, subset=['損益']), use_container_width=True)
             
-            # AI 診斷按鈕
-            if st.button("🔮 讓 AI 分析現有持股短期漲跌"):
+            # 視覺化圖表
+            st.plotly_chart(px.pie(df, values='市值', names='名稱', hole=0.4, title="資產比例分佈"), use_container_width=True)
+
+            if st.button("🔮 讓 AI 診斷目前持股漲跌"):
                 names = ", ".join([f"{x['名稱']}({x['代碼']})" for x in res])
-                with st.spinner("AI 分析中..."):
-                    report = ask_gemini(f"我的持股：{names}。請給予漲跌預估。")
+                with st.spinner("AI 顧問診斷中..."):
+                    report = ask_gemini(f"我的持股：{names}。請分別給予短期漲跌預估。")
                     st.success("AI 持股分析報告：")
                     st.write(report)
 
