@@ -6,34 +6,35 @@ import plotly.express as px
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# 這是你提供的 Key，如果持續 404，請務必去 AI Studio 點擊 "Create API key in NEW project"
-NEW_API_KEY = "AIzaSyCk5arpu7irr1q8tS2uCKEsINk6IqjVwLA" 
+# 請確保這裡是你點擊 "Create API key in NEW project" 後產生的新金鑰
+NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 def ask_gemini(prompt):
-    """手動透過 HTTP 連線 Google API (2026 穩定版)"""
-    # 對於新專案的 Key，v1beta/gemini-1.5-flash 是權限最開的路徑
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={NEW_API_KEY}"
+    """自動切換路徑，確保避開 Google 404 地雷"""
+    # 嘗試三個最可能的路徑：v1beta-flash, v1-flash, v1-pro
+    targets = [
+        ("v1beta", "gemini-1.5-flash"),
+        ("v1", "gemini-1.5-flash"),
+        ("v1", "gemini-pro")
+    ]
     
-    headers = {'Content-Type': 'application/json'}
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
-    }
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
-        result = response.json()
-        
-        if response.status_code == 200:
-            # 成功回傳
-            return result['candidates'][0]['content']['parts'][0]['text']
-        else:
-            # 診斷錯誤原因
-            err_msg = result.get('error', {}).get('message', '未知錯誤')
-            if "404" in str(response.status_code):
-                return "❌ 權限同步中：請稍等 1 分鐘讓新 Key 生效，或確認是否已點選 'Create API key in NEW project'。"
-            return f"❌ API 錯誤 ({response.status_code}): {err_msg}"
+    last_error = ""
+    for api_ver, model_name in targets:
+        url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_name}:generateContent?key={NEW_API_KEY}"
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        try:
+            response = requests.post(url, json=payload, timeout=15)
+            result = response.json()
+            if response.status_code == 200:
+                return result['candidates'][0]['content']['parts'][0]['text']
+            else:
+                last_error = result.get('error', {}).get('message', '未知錯誤')
+                # 如果是 404 則繼續嘗試下一個目標
+                if response.status_code != 404: break 
+        except:
+            continue
             
-    except Exception as e:
-        return f"⚠️ 連線異常: {str(e)}"
+    return f"❌ AI 目前無法回應：{last_error}\n💡 解決方案：如果持續 404，代表您的 Google 帳號地區不支持。請嘗試重新申請 Key 並選 'New Project'。"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -58,7 +59,7 @@ st.markdown("""
 if 'db' not in st.session_state: st.session_state.db = lod()
 u = st.session_state.get('u')
 
-# --- 3. 登入系統 ---
+# --- 3. 登入系統 (落實密碼保護) ---
 if not u:
     st.markdown("<h1 style='text-align: center;'>🛡️ 家族投資安全系統</h1>", unsafe_allow_html=True)
     _, c2, _ = st.columns([1, 1.2, 1])
@@ -69,7 +70,6 @@ if not u:
             db = lod()
             if uid and upw:
                 ph=hsh(upw)
-                # 記憶功能：密碼保護
                 if uid not in db: db[uid]={"p":ph,"s":[]}; sav(db)
                 if db[uid]["p"]==ph: 
                     st.session_state.u=uid; st.session_state.db=db; st.rerun()
@@ -87,11 +87,11 @@ if m == "🤖 AI 投資助手":
     p = st.chat_input("請輸入您的投資問題...")
     if p:
         with st.chat_message("user"): st.write(p)
-        with st.spinner("AI 正在嘗試多個通道連線中..."):
+        with st.spinner("AI 正在切換連線通道中..."):
             ans = ask_gemini(p)
             with st.chat_message("assistant"): st.write(ans)
 
-# --- 6. 資產儀表板 ---
+# --- 6. 資產儀表板 (略) ---
 elif m == "📈 資產儀表板":
     st.title("💎 家族資產戰情室")
     try: ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
@@ -156,5 +156,3 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
-
-
