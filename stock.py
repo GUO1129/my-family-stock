@@ -7,32 +7,32 @@ import plotly.express as px
 # --- 1. 後端資料核心 ---
 F = "data.json"
 
-# 從 Streamlit Secrets 讀取金鑰，確保安全
+# 請確保已在 Streamlit Secrets 設定 GEMINI_KEY
 if "GEMINI_KEY" in st.secrets:
     STABLE_KEY = st.secrets["GEMINI_KEY"]
 else:
-    st.warning("🔑 請先在 Streamlit Cloud 的 Secrets 設定 GEMINI_KEY")
+    st.warning("🔑 請在 Streamlit Secrets 設定 GEMINI_KEY")
     STABLE_KEY = ""
 
 def ask_gemini(prompt):
-    """2026 年連線修正版：優先使用 v1beta 的 flash 模型"""
-    if not STABLE_KEY: return "❌ 尚未設定 API Key"
+    """2026 修正版：確保 Payload 格式符合 Google 最新規範"""
+    if not STABLE_KEY: return "❌ 未設定 API Key"
     
-    # 這是目前新帳號 100% 成功的路徑組合
-    targets = [
-        ("v1beta", "gemini-1.5-flash"), 
-        ("v1", "gemini-1.5-flash")
+    # 嘗試 v1beta 與 v1 兩個路徑
+    urls = [
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={STABLE_KEY}",
+        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={STABLE_KEY}"
     ]
     
-    for api_ver, model_name in targets:
-        url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_name}:generateContent?key={STABLE_KEY}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    for url in urls:
         try:
-            payload = {"contents": [{"parts": [{"text": prompt}]}]}
             response = requests.post(url, json=payload, timeout=15)
             if response.status_code == 200:
                 return response.json()['candidates'][0]['content']['parts'][0]['text']
         except: continue
-    return "❌ AI 顧問目前忙線中，請稍後再試。"
+    return "❌ AI 暫時無法連線，請確認 Secrets 中的 Key 是否有效。"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -43,20 +43,14 @@ def lod():
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
-# --- 2. 漲停計算邏輯 ---
-def calc_limit(price, is_tw=True):
-    """計算台股 10% 漲停價 (含五檔跳動規律)"""
-    if not is_tw: return round(price * 1.1, 2)
-    raw = price * 1.1
-    if raw < 10: return floor_to_tick(raw, 0.01)
-    elif raw < 50: return floor_to_tick(raw, 0.05)
-    elif raw < 100: return floor_to_tick(raw, 0.1)
-    elif raw < 500: return floor_to_tick(raw, 0.5)
-    elif raw < 1000: return floor_to_tick(raw, 1.0)
-    else: return floor_to_tick(raw, 5.0)
-
-def floor_to_tick(val, tick):
-    return round((val // tick) * tick, 2)
+# --- 2. 漲跌計算邏輯 ---
+def calc_limit(price, is_tw=True, direction="up"):
+    """計算台股漲跌停價 (10%)"""
+    if not is_tw: return round(price * (1.1 if direction=="up" else 0.9), 2)
+    change = 1.1 if direction == "up" else 0.9
+    raw = price * change
+    # 簡單四捨五入邏輯，符合台股大致規律
+    return round(raw, 2)
 
 # --- 3. 頁面配置 ---
 st.set_page_config(page_title="家族投資戰情室", layout="wide")
@@ -90,15 +84,16 @@ if st.sidebar.button("🔒 安全登出"): st.session_state.u = None; st.rerun()
 
 # --- 6. AI 助手 ---
 if m == "🤖 AI 投資助手":
-    st.title("🤖 家族 AI 顧問")
-    p = st.chat_input("請輸入您的投資問題...")
+    st.title("🤖 家族 AI 投資顧問")
+    st.subheader("💡 預估市場走勢與建議")
+    p = st.chat_input("請輸入股票代碼或投資問題（例如：分析 2330.TW 的未來走勢）")
     if p:
         with st.chat_message("user"): st.write(p)
-        with st.spinner("AI 顧問分析中..."):
-            ans = ask_gemini(p)
+        with st.spinner("AI 顧問正在讀取最新數據並預估漲跌..."):
+            ans = ask_gemini(f"請以投資顧問身份，針對以下問題給予漲跌預估分析與建議：{p}")
             with st.chat_message("assistant"): st.write(ans)
 
-# --- 7. 資產儀表板 (含漲停分析表) ---
+# --- 7. 資產儀表板 (含漲跌分析表) ---
 elif m == "📈 資產儀表板":
     st.title("💎 家族資產戰情室")
     try: ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
@@ -112,12 +107,13 @@ elif m == "📈 資產儀表板":
                 sym = i.get("t", "").strip().upper()
                 try:
                     tk = yf.Ticker(sym)
-                    df_hist = tk.history(period="2d")
+                    df_hist = tk.history(period="5d")
                     curr = df_hist["Close"].iloc[-1]
                     prev = df_hist["Close"].iloc[-2]
                     
                     is_tw = ".TW" in sym or ".TWO" in sym
-                    limit_price = calc_limit(prev, is_tw)
+                    up_limit = calc_limit(prev, is_tw, "up")
+                    down_limit = calc_limit(prev, is_tw, "down")
                     
                     rate = ex_rate if not is_tw else 1.0
                     mv = round(curr * rate * i.get("q", 0))
@@ -128,8 +124,8 @@ elif m == "📈 資產儀表板":
                         "代碼": sym,
                         "昨日收盤": round(prev, 2),
                         "今日現價": round(curr, 2),
-                        "預估漲停": limit_price,
-                        "距漲停差": f"{round(limit_price - curr, 2)} ({round(((limit_price/curr)-1)*100, 1)}%)",
+                        "預估漲停": up_limit,
+                        "預估跌停": down_limit,
                         "市值": mv,
                         "損益": pf
                     })
@@ -137,18 +133,17 @@ elif m == "📈 資產儀表板":
         
         if res:
             final_df = pd.DataFrame(res)
+            st.metric("總市值 (TWD)", f"{final_df['市值'].sum():,} 元", delta=f"總損益: {final_df['損益'].sum():,}")
             
-            # 指標卡
-            c1, c2, c3 = st.columns(3)
-            c1.metric("總市值", f"{final_df['市值'].sum():,} 元")
-            c2.metric("總盈虧", f"{final_df['損益'].sum():,} 元", delta=int(final_df['損益'].sum()))
-            c3.metric("美金匯率", f"{ex_rate}")
-            
-            # 漲停監控表
-            st.subheader("🔥 漲停監控與持股分析")
+            st.subheader("🔥 漲跌停監控與持股分析")
             st.dataframe(final_df, use_container_width=True)
             
-            st.plotly_chart(px.pie(final_df, values='市值', names='名稱', hole=0.4), use_container_width=True)
+            if st.button("🔮 讓 AI 分析現有持股漲跌"):
+                stock_list = ", ".join([f"{x['名稱']}({x['代碼']})" for x in res])
+                with st.spinner("分析中..."):
+                    analysis = ask_gemini(f"我的持股包含：{stock_list}。請根據目前市場狀況，簡短預估這些股票的短期漲跌趨勢。")
+                    st.success("AI 預估報告：")
+                    st.write(analysis)
 
     with st.expander("🛠️ 管理持股"):
         with st.form("add"):
