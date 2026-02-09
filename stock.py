@@ -15,9 +15,9 @@ except ImportError:
 F = "data.json"
 
 # 【在此處貼上你新申請的 API Key】
-NEW_API_KEY = "請貼上你的新金鑰" 
+NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
-if HAS_AI_SDK and NEW_API_KEY != "請貼上你的新金鑰":
+if HAS_AI_SDK and NEW_API_KEY != "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw":
     try:
         genai.configure(api_key=NEW_API_KEY)
         # 這裡不鎖死版本，讓 SDK 自己去找最穩定的 flash 模型
@@ -163,3 +163,4 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
+
