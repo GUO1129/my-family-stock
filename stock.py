@@ -6,7 +6,10 @@ import plotly.express as px
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
+# 更新 AI 連線網址與金鑰
 BACKEND_GEMINI_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw"
+# 修正後的 2026 最新 API 終端點
+API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={BACKEND_GEMINI_KEY}"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -53,24 +56,42 @@ st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 (增加錯誤偵測) ---
+# --- 5. AI 助手 (修復 404 問題) ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
     p = st.chat_input("詢問市場趨勢...")
     if p:
         with st.chat_message("user"): st.write(p)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={BACKEND_GEMINI_KEY}"
+        # 建立標準的 Gemini 請求內容
+        payload = {
+            "contents": [{
+                "parts": [{"text": p}]
+            }]
+        }
+        headers = {'Content-Type': 'application/json'}
+        
         try:
-            res = requests.post(url, json={"contents": [{"parts": [{"text": p}]}]}, timeout=10)
+            # 發送請求
+            res = requests.post(API_URL, json=payload, headers=headers, timeout=15)
             if res.status_code == 200:
                 ans = res.json()['candidates'][0]['content']['parts'][0]['text']
                 with st.chat_message("assistant"): st.write(ans)
+            elif res.status_code == 404:
+                st.error("❌ AI 伺服器路徑錯誤 (404)。正在嘗試自動修正連線...")
+                # 備用路徑嘗試
+                alt_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={BACKEND_GEMINI_KEY}"
+                res_alt = requests.post(alt_url, json=payload, headers=headers, timeout=15)
+                if res_alt.status_code == 200:
+                    ans = res_alt.json()['candidates'][0]['content']['parts'][0]['text']
+                    with st.chat_message("assistant"): st.write(ans)
+                else:
+                    st.error(f"連線失敗，請檢查 API Key 是否被停用。")
             else:
-                st.error(f"AI 暫時無法連線 (代碼: {res.status_code})，請稍後再試。")
-        except:
-            st.error("網路連線超時，請檢查您的網路環境。")
+                st.error(f"AI 暫時無法連線 (代碼: {res.status_code})")
+        except Exception as e:
+            st.error(f"網路連線異常: {e}")
 
-# --- 6. 資產儀表板 ---
+# --- 6. 資產儀表板 (保留所有圖表) ---
 elif m == "📈 資產儀表板":
     st.title("💎 家族資產戰情室")
     try: ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
