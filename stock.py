@@ -15,24 +15,34 @@ else:
     STABLE_KEY = ""
 
 def ask_gemini(prompt):
-    """2026 修正版：確保 Payload 格式符合 Google 最新規範"""
-    if not STABLE_KEY: return "❌ 未設定 API Key"
+    """加強版：會顯示詳細錯誤原因，幫我們精準抓蟲"""
+    if not STABLE_KEY: return "❌ Secrets 中找不到 GEMINI_KEY"
     
-    # 嘗試 v1beta 與 v1 兩個路徑
+    # 嘗試三個最可能的網址
     urls = [
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={STABLE_KEY}",
-        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={STABLE_KEY}"
+        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={STABLE_KEY}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={STABLE_KEY}"
     ]
     
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    headers = {'Content-Type': 'application/json'}
     
+    last_status = ""
     for url in urls:
         try:
-            response = requests.post(url, json=payload, timeout=15)
+            response = requests.post(url, headers=headers, json=payload, timeout=15)
             if response.status_code == 200:
                 return response.json()['candidates'][0]['content']['parts'][0]['text']
-        except: continue
-    return "❌ AI 暫時無法連線，請確認 Secrets 中的 Key 是否有效。"
+            else:
+                # 抓取 Google 傳回的具體錯誤訊息
+                detail = response.json().get('error', {}).get('message', '未知原因')
+                last_status = f"HTTP {response.status_code}: {detail}"
+        except Exception as e:
+            last_status = str(e)
+            continue
+            
+    return f"❌ AI 連線失敗詳細原因：{last_status}"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -160,3 +170,4 @@ elif m == "🧮 攤平計算機":
     if (q1 + q2) > 0:
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.metric("💡 攤平後均價", f"{round(avg, 2)} 元")
+
