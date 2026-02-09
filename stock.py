@@ -13,20 +13,25 @@ except ImportError:
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-
-# 【AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw】
-# 例如: NEW_API_KEY = "AIzaSy..."
+# --- 修正後的初始化邏輯 ---
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
-# 初始化 model 為 None，防止 "not defined" 錯誤
 model = None
 
-if HAS_AI_SDK and NEW_API_KEY != "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw":
-    try:
-        genai.configure(api_key=NEW_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-    except Exception as e:
-        st.error(f"AI 配置出錯: {e}")
+if HAS_AI_SDK:
+    if NEW_API_KEY != "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" and NEW_API_KEY.startswith("AIza"):
+        try:
+            genai.configure(api_key=NEW_API_KEY)
+            # 測試是否能列出模型，這能確認 Key 是否真的有效
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            # 預先做一次簡單測試
+        except Exception as e:
+            st.error(f"⚠️ 金鑰認證失敗：{e}")
+            st.info("請檢查：1. 金鑰是否複製完整 2. 是否有開通 Gemini API 權限")
+    elif NEW_API_KEY.startswith("請貼上"):
+        pass # 尚未填寫，由下方 UI 顯示警告
+    else:
+        st.error("❌ 金鑰格式不正確！應該是以 'AIza' 開頭的字串。")
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -167,3 +172,4 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
+
