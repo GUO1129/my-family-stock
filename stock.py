@@ -6,8 +6,13 @@ import plotly.express as px
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# 這是你剛申請的新金鑰，已更新
-STABLE_GEMINI_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
+
+# 🔴 絕對不要在這裡寫 AIza... 
+# 我們改從 Streamlit 的秘密空間讀取
+if "GEMINI_KEY" in st.secrets:
+    STABLE_GEMINI_KEY = st.secrets["GEMINI_KEY"]
+else:
+    STABLE_GEMINI_KEY = "" # 沒設定時留空
 
 def ask_gemini(prompt):
     """手動透過 HTTP 連線 Google API (具備自動路徑切換功能)"""
@@ -149,3 +154,4 @@ elif m == "🧮 攤平計算機":
     if (q1 + q2) > 0:
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.metric("💡 攤平後均價", f"{round(avg, 2)} 元")
+
