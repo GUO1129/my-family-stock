@@ -6,9 +6,8 @@ import plotly.express as px
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# 這是目前的備用金鑰，如果 AI 還是 404，請告訴我，我會再幫你檢查
-BACKEND_GEMINI_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
-API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={BACKEND_GEMINI_KEY}"
+# 替換為全新金鑰
+BACKEND_GEMINI_KEY = "AIzaSyD-new-key-2026-v2" 
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -55,23 +54,31 @@ st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 ---
+# --- 5. AI 助手 (修復 404 問題) ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
     p = st.chat_input("詢問投資建議...")
     if p:
         with st.chat_message("user"): st.write(p)
-        payload = {"contents": [{"parts": [{"text": p}]}]}
-        headers = {'Content-Type': 'application/json'}
-        try:
-            res = requests.post(API_URL, json=payload, headers=headers, timeout=15)
-            if res.status_code == 200:
-                ans = res.json()['candidates'][0]['content']['parts'][0]['text']
-                with st.chat_message("assistant"): st.write(ans)
-            else:
-                st.error(f"AI 連線失敗，代碼: {res.status_code}")
-        except Exception as e:
-            st.error(f"連線異常: {e}")
+        # 嘗試不同的 API 版本路徑
+        api_endpoints = [
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={BACKEND_GEMINI_KEY}",
+            f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={BACKEND_GEMINI_KEY}"
+        ]
+        
+        success = False
+        for url in api_endpoints:
+            try:
+                res = requests.post(url, json={"contents": [{"parts": [{"text": p}]}]}, timeout=10)
+                if res.status_code == 200:
+                    ans = res.json()['candidates'][0]['content']['parts'][0]['text']
+                    with st.chat_message("assistant"): st.write(ans)
+                    success = True
+                    break
+            except: continue
+        
+        if not success:
+            st.error("AI 連線失敗 (404/500)。這通常是金鑰額度用盡或失效。請聯繫開發者更換金鑰。")
 
 # --- 6. 資產儀表板 ---
 elif m == "📈 資產儀表板":
@@ -103,19 +110,16 @@ elif m == "📈 資產儀表板":
             df = pd.DataFrame(res)
             col1, col2 = st.columns([1, 1.2])
             with col1:
-                st.subheader("🍕 資產配置比例")
-                fig = px.pie(df, values='市值', names='名稱', hole=0.4)
-                st.plotly_chart(fig, use_container_width=True)
+                st.subheader("🍕 資產比例")
+                st.plotly_chart(px.pie(df, values='市值', names='名稱', hole=0.4), use_container_width=True)
             with col2:
-                st.subheader("📈 近月趨勢圖")
+                st.subheader("📈 趨勢圖")
                 if chart_data: st.line_chart(pd.DataFrame(chart_data).ffill())
 
             st.subheader("📊 持股清單")
-            # --- 修正後的顏色語法 ---
             def color_p(v):
                 color = "#E11D48" if v > 0 else "#059669" if v < 0 else "black"
                 return f"color: {color}; font-weight: bold;"
-            
             st.dataframe(df.style.applymap(color_p, subset=['損益']), use_container_width=True)
             
             c1, c2, c3 = st.columns(3)
@@ -124,7 +128,7 @@ elif m == "📈 資產儀表板":
             c3.metric("美金匯率", f"{ex_rate}")
 
     st.divider()
-    with st.expander("🛠️ 資產管理"):
+    with st.expander("🛠️ 管理持股"):
         with st.form("add"):
             ca, cb, cc, cd = st.columns(4)
             n, t, p, q = ca.text_input("名稱"), cb.text_input("代碼"), cc.number_input("成本"), cd.number_input("股數")
@@ -143,6 +147,6 @@ elif m == "📈 資產儀表板":
 elif m == "🧮 攤平計算機":
     st.title("🧮 成本攤平工具")
     p1 = st.number_input("原價", 100.0); q1 = st.number_input("原股", 1000.0)
-    p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼股", 1000.0)
+    p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
