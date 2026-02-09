@@ -6,28 +6,32 @@ import plotly.express as px
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# 確保這裡是你最新申請的 Key
+# 這是你提供的 Key，如果持續 404，請務必去 AI Studio 點擊 "Create API key in NEW project"
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 def ask_gemini(prompt):
-    """手動透過 HTTP 連線 Google API"""
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={NEW_API_KEY}"
-    headers = {'Content-Type': 'application/json'}
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
-    }
-    try:
-        # 這段縮排必須剛好是 8 個空格
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        result = response.json()
-        if response.status_code == 200:
-            return result['candidates'][0]['content']['parts'][0]['text']
-        else:
-            msg = result.get('error', {}).get('message', '未知錯誤')
-            return f"❌ API 錯誤 ({response.status_code}): {msg}"
-    except Exception as e:
-        # except 必須與 try 對齊
-        return f"⚠️ 連線異常: {str(e)}"
+    """自動嘗試不同模型路徑以避開 404 權限問題"""
+    # 優先順序：1.5-flash (v1) -> 1.5-flash (v1beta) -> 1.0-pro (v1)
+    endpoints = [
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={NEW_API_KEY}",
+        f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={NEW_API_KEY}"
+    ]
+    
+    last_error = ""
+    for url in endpoints:
+        try:
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            response = requests.post(url, json=payload, timeout=10)
+            result = response.json()
+            if response.status_code == 200:
+                return result['candidates'][0]['content']['parts'][0]['text']
+            else:
+                last_error = result.get('error', {}).get('message', '未知錯誤')
+        except Exception as e:
+            last_error = str(e)
+            continue
+            
+    return f"❌ 最終失敗：{last_error}\n💡 建議：此錯誤代表您的 API Key 無權限存取模型。請至 Google AI Studio 重新申請一個「新專案 (New Project)」的 Key。"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -63,6 +67,7 @@ if not u:
             db = lod()
             if uid and upw:
                 ph=hsh(upw)
+                # 記憶功能：密碼保護
                 if uid not in db: db[uid]={"p":ph,"s":[]}; sav(db)
                 if db[uid]["p"]==ph: 
                     st.session_state.u=uid; st.session_state.db=db; st.rerun()
@@ -74,18 +79,15 @@ st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 (手動 API 版) ---
+# --- 5. AI 助手 ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
     p = st.chat_input("請輸入您的投資問題...")
     if p:
         with st.chat_message("user"): st.write(p)
-        try:
-            with st.spinner("AI 正在分析市場數據..."):
-                ans = ask_gemini(p)
-                with st.chat_message("assistant"): st.write(ans)
-        except Exception as e:
-            st.error(f"連線失敗：{e}")
+        with st.spinner("AI 正在嘗試多個通道連線中..."):
+            ans = ask_gemini(p)
+            with st.chat_message("assistant"): st.write(ans)
 
 # --- 6. 資產儀表板 ---
 elif m == "📈 資產儀表板":
@@ -152,7 +154,3 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
-
-
-
-
