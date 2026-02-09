@@ -7,40 +7,37 @@ import plotly.express as px
 # --- 1. 後端資料核心 ---
 F = "data.json"
 
-# 🔴 絕對不要在這裡寫 AIza... 
-# 我們改從 Streamlit 的秘密空間讀取
+# 從 Streamlit Secrets 讀取金鑰，確保安全性
 if "GEMINI_KEY" in st.secrets:
-    STABLE_GEMINI_KEY = st.secrets["GEMINI_KEY"]
+    STABLE_KEY = st.secrets["GEMINI_KEY"]
 else:
-    STABLE_GEMINI_KEY = "" # 沒設定時留空
+    st.error("🔑 請在 Streamlit Secrets 中設定 GEMINI_KEY")
+    st.stop()
 
 def ask_gemini(prompt):
-    """手動透過 HTTP 連線 Google API (具備自動路徑切換功能)"""
-    # 嘗試兩個最穩定的路徑
-    endpoints = [
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={STABLE_GEMINI_KEY}",
-        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={STABLE_GEMINI_KEY}"
+    """具備路徑容錯機制的 AI 調用函數"""
+    # 2026 年最穩定的兩個路徑組合
+    targets = [
+        ("v1beta", "gemini-1.5-flash"),
+        ("v1", "gemini-1.5-flash"),
+        ("v1", "gemini-pro")
     ]
     
-    last_error = ""
-    for url in endpoints:
+    last_err = ""
+    for api_ver, model_name in targets:
+        url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_name}:generateContent?key={STABLE_KEY}"
         try:
-            headers = {'Content-Type': 'application/json'}
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
-            response = requests.post(url, headers=headers, json=payload, timeout=20)
+            response = requests.post(url, json=payload, timeout=15)
             result = response.json()
-            
             if response.status_code == 200:
                 return result['candidates'][0]['content']['parts'][0]['text']
             else:
-                last_error = result.get('error', {}).get('message', '未知錯誤')
-                # 如果不是 404，通常代表 Key 有問題，直接跳出循環
-                if response.status_code != 404: break
+                last_err = result.get('error', {}).get('message', '未知錯誤')
         except Exception as e:
-            last_error = str(e)
+            last_err = str(e)
             continue
-            
-    return f"❌ AI 顧問連線失敗：{last_error}\n💡 解決方案：如果持續顯示 Expired，請至 Streamlit Cloud 點擊 'Reboot App'。"
+    return f"❌ AI 無法連線：{last_err}\n💡 提示：請確認您的 API Key 是否來自 Google AI Studio 的 'New Project'。"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -51,16 +48,8 @@ def lod():
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
-# --- 2. 介面樣式 ---
+# --- 2. 頁面配置 ---
 st.set_page_config(page_title="家族投資戰情室", layout="wide")
-st.markdown("""
-<style>
-    :root { color-scheme: light; }
-    .stApp { background-color: #FFFFFF !important; }
-    h1, h2, h3 { color: #1E3A8A !important; }
-    .stMetric { background-color: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; }
-</style>
-""", unsafe_allow_html=True)
 
 if 'db' not in st.session_state: st.session_state.db = lod()
 u = st.session_state.get('u')
@@ -76,7 +65,7 @@ if not u:
             db = lod()
             if uid and upw:
                 ph = hsh(upw)
-                # 為每個帳號建立獨立空間與密碼
+                # 記憶功能：新用戶設定密碼，老用戶驗證密碼
                 if uid not in db: 
                     db[uid] = {"p": ph, "s": []}
                     sav(db)
@@ -98,11 +87,10 @@ if st.sidebar.button("🔒 安全登出"):
 # --- 5. AI 助手 ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
-    st.info("目前的顧問大腦：Gemini 1.5 Flash (2026 穩定版)")
     p = st.chat_input("請輸入您的投資問題...")
     if p:
         with st.chat_message("user"): st.write(p)
-        with st.spinner("AI 正在分析大數據中..."):
+        with st.spinner("AI 顧問思考中..."):
             ans = ask_gemini(p)
             with st.chat_message("assistant"): st.write(ans)
 
@@ -154,4 +142,3 @@ elif m == "🧮 攤平計算機":
     if (q1 + q2) > 0:
         avg = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
         st.metric("💡 攤平後均價", f"{round(avg, 2)} 元")
-
