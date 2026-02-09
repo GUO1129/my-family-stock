@@ -7,7 +7,7 @@ import plotly.express as px
 # --- 1. 後端資料核心 ---
 F = "data.json"
 # 這是你提供的 Key，如果持續 404，請務必去 AI Studio 點擊 "Create API key in NEW project"
-NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
+NEW_API_KEY = "AIzaSyCk5arpu7irr1q8tS2uCKEsINk6IqjVwLA" 
 
 def ask_gemini(prompt):
     """自動嘗試不同模型路徑以避開 404 權限問題"""
@@ -154,3 +154,4 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
+
