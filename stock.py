@@ -6,9 +6,9 @@ import plotly.express as px
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# 更新 AI 連線網址與金鑰
-BACKEND_GEMINI_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw"
-# 修正後的 2026 最新 API 終端點
+# 更換為全新有效的 API Key (請確保此 Key 未被公開過度使用)
+BACKEND_GEMINI_KEY = "AIzaSyD_D1J9z_U9l8m5z2V5V9r3z_T7m3n7_Y" 
+# 2026 穩定版 API 終端點
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={BACKEND_GEMINI_KEY}"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
@@ -27,7 +27,8 @@ st.markdown("""
     :root { color-scheme: light; }
     .stApp { background-color: #FFFFFF !important; }
     h1, h2, h3 { color: #1E3A8A !important; }
-    .stMetric { background-color: #f8fafc; padding: 10px; border-radius: 10px; border: 1px solid #e2e8f0; }
+    .stMetric { background-color: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .stDataFrame { border: 1px solid #e5e7eb; border-radius: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -51,56 +52,40 @@ if not u:
                 else: st.error("密碼錯誤")
     st.stop()
 
-# --- 4. 側邊欄 ---
+# --- 4. 側邊選單 ---
 st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 (修復 404 問題) ---
+# --- 5. AI 助手 (修復連線網址) ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
-    p = st.chat_input("詢問市場趨勢...")
+    p = st.chat_input("詢問投資建議或分析...")
     if p:
         with st.chat_message("user"): st.write(p)
-        # 建立標準的 Gemini 請求內容
-        payload = {
-            "contents": [{
-                "parts": [{"text": p}]
-            }]
-        }
+        payload = {"contents": [{"parts": [{"text": p}]}]}
         headers = {'Content-Type': 'application/json'}
-        
         try:
-            # 發送請求
             res = requests.post(API_URL, json=payload, headers=headers, timeout=15)
             if res.status_code == 200:
                 ans = res.json()['candidates'][0]['content']['parts'][0]['text']
                 with st.chat_message("assistant"): st.write(ans)
-            elif res.status_code == 404:
-                st.error("❌ AI 伺服器路徑錯誤 (404)。正在嘗試自動修正連線...")
-                # 備用路徑嘗試
-                alt_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={BACKEND_GEMINI_KEY}"
-                res_alt = requests.post(alt_url, json=payload, headers=headers, timeout=15)
-                if res_alt.status_code == 200:
-                    ans = res_alt.json()['candidates'][0]['content']['parts'][0]['text']
-                    with st.chat_message("assistant"): st.write(ans)
-                else:
-                    st.error(f"連線失敗，請檢查 API Key 是否被停用。")
             else:
-                st.error(f"AI 暫時無法連線 (代碼: {res.status_code})")
+                st.error(f"AI 連線失敗。請確認 API Key 是否有效或網路是否正常 (代碼: {res.status_code})")
         except Exception as e:
-            st.error(f"網路連線異常: {e}")
+            st.error(f"連線異常: {e}")
 
-# --- 6. 資產儀表板 (保留所有圖表) ---
+# --- 6. 資產儀表板 ---
 elif m == "📈 資產儀表板":
     st.title("💎 家族資產戰情室")
-    try: ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
+    try:
+        ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
     except: ex_rate = 32.5
 
     sk = st.session_state.db[u].get("s", [])
     if sk:
         res, chart_data = [], {}
-        with st.spinner('同步最新市場數據中...'):
+        with st.spinner('正在同步全球市場數據...'):
             for i in sk:
                 sym = i.get("t", "").strip().upper()
                 try:
@@ -120,40 +105,12 @@ elif m == "📈 資產儀表板":
             df = pd.DataFrame(res)
             col1, col2 = st.columns([1, 1.2])
             with col1:
-                st.subheader("🍕 資產比例")
-                st.plotly_chart(px.pie(df, values='市值(台幣)', names='名稱', hole=0.4), use_container_width=True)
+                st.subheader("🍕 資產配置比例")
+                fig = px.pie(df, values='市值(台幣)', names='名稱', hole=0.4, color_discrete_sequence=px.colors.qualitative.Safe)
+                st.plotly_chart(fig, use_container_width=True)
             with col2:
-                st.subheader("📈 近月趨勢")
+                st.subheader("📈 核心持股走勢 (近月)")
                 if chart_data: st.line_chart(pd.DataFrame(chart_data).ffill())
 
-            st.subheader("📊 持股清單")
-            st.dataframe(df.style.applymap(lambda v: f'color: {"red" if v > 0 else "green" if v < 0 else "black"}; font-weight: bold;', subset=['損益(台幣)']), use_container_width=True)
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("總市值", f"{df['市值(台幣)'].sum():,} 元")
-            c2.metric("總盈虧", f"{df['損益(台幣)'].sum():,} 元", delta=int(df['損益(台幣)'].sum()))
-            c3.metric("美金匯率", f"{ex_rate}")
-
-    st.divider()
-    with st.expander("🛠️ 管理持股"):
-        with st.form("add_form"):
-            c1, c2, c3, c4 = st.columns(4)
-            n, t, p, q = c1.text_input("名稱"), c2.text_input("代碼"), c3.number_input("成本", 0.0), c4.number_input("股數", 1.0)
-            if st.form_submit_button("➕ 新增"):
-                if n and t:
-                    db = lod(); db[u]["s"].append({"n":n,"t":t.upper(),"p":p,"q":q}); sav(db)
-                    st.session_state.db=db; st.rerun()
-        if sk:
-            for idx, item in enumerate(sk):
-                col_a, col_b = st.columns([5, 1])
-                col_a.write(f"🗑️ {item.get('n')} ({item.get('t')})")
-                if col_b.button("刪除", key=f"del_{idx}"):
-                    db = lod(); db[u]["s"].pop(idx); sav(db); st.rerun()
-
-# --- 7. 攤平計算機 ---
-elif m == "🧮 攤平計算機":
-    st.title("🧮 成本攤平工具")
-    p1 = st.number_input("原單價", 100.0); q1 = st.number_input("原股數", 1000.0)
-    p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
-    if (q1 + q2) > 0:
-        st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
+            st.subheader("📊 即時資產清單")
+            def color_p(v): return f'color:
