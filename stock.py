@@ -10,26 +10,23 @@ F = "data.json"
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 def ask_gemini(prompt):
-    """使用相容性最高的 gemini-pro 模型，避開 1.5 Flash 的地區限制"""
-    # 使用 v1 穩定路徑，搭配 gemini-pro
+    """手動透過 HTTP 連線 Google API"""
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={NEW_API_KEY}"
-    
     headers = {'Content-Type': 'application/json'}
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
     }
     try:
+        # 這段縮排必須剛好是 8 個空格
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         result = response.json()
-        
         if response.status_code == 200:
             return result['candidates'][0]['content']['parts'][0]['text']
         else:
-            # 自動診斷錯誤訊息
-            error_detail = result.get('error', {}).get('message', '未知錯誤')
-            return f"❌ AI 服務暫時無法存取 ({response.status_code})\n原因：{error_detail}"
-            
-except Exception as e:
+            msg = result.get('error', {}).get('message', '未知錯誤')
+            return f"❌ API 錯誤 ({response.status_code}): {msg}"
+    except Exception as e:
+        # except 必須與 try 對齊
         return f"⚠️ 連線異常: {str(e)}"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
@@ -155,6 +152,7 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
+
 
 
 
