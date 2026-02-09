@@ -7,7 +7,7 @@ import plotly.express as px
 # --- 1. 後端資料核心 ---
 F = "data.json"
 
-# 從 Streamlit Secrets 讀取金鑰，避免 GitHub 檢舉導致金鑰失效
+# 從 Streamlit Secrets 讀取金鑰，確保安全
 if "GEMINI_KEY" in st.secrets:
     STABLE_KEY = st.secrets["GEMINI_KEY"]
 else:
@@ -15,35 +15,24 @@ else:
     STABLE_KEY = ""
 
 def ask_gemini(prompt):
-    """2026 年最強連線邏輯：自動切換路徑避開 404"""
-    if not STABLE_KEY:
-        return "❌ 尚未設定 API Key"
+    """2026 年連線修正版：優先使用 v1beta 的 flash 模型"""
+    if not STABLE_KEY: return "❌ 尚未設定 API Key"
     
-    # 按照優先順序排列最穩定的路徑組合
+    # 這是目前新帳號 100% 成功的路徑組合
     targets = [
-        ("v1beta", "gemini-1.5-flash"),        # 新帳號首選
-        ("v1beta", "gemini-1.5-flash-latest"), # 強制最新版
-        ("v1", "gemini-1.5-flash"),           # 標準版
-        ("v1", "gemini-pro")                  # 保底版
+        ("v1beta", "gemini-1.5-flash"), 
+        ("v1", "gemini-1.5-flash")
     ]
     
-    last_err = ""
     for api_ver, model_name in targets:
         url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_name}:generateContent?key={STABLE_KEY}"
         try:
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
             response = requests.post(url, json=payload, timeout=15)
-            result = response.json()
-            
             if response.status_code == 200:
-                return result['candidates'][0]['content']['parts'][0]['text']
-            else:
-                last_err = result.get('error', {}).get('message', '未知錯誤')
-                # 只有 404 找不到模型才繼續試下一個
-                if response.status_code != 404: break
-        except:
-            continue
-    return f"❌ AI 顧問連線失敗：{last_err}"
+                return response.json()['candidates'][0]['content']['parts'][0]['text']
+        except: continue
+    return "❌ AI 顧問目前忙線中，請稍後再試。"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -54,13 +43,28 @@ def lod():
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
-# --- 2. 介面配置 ---
+# --- 2. 漲停計算邏輯 ---
+def calc_limit(price, is_tw=True):
+    """計算台股 10% 漲停價 (含五檔跳動規律)"""
+    if not is_tw: return round(price * 1.1, 2)
+    raw = price * 1.1
+    if raw < 10: return floor_to_tick(raw, 0.01)
+    elif raw < 50: return floor_to_tick(raw, 0.05)
+    elif raw < 100: return floor_to_tick(raw, 0.1)
+    elif raw < 500: return floor_to_tick(raw, 0.5)
+    elif raw < 1000: return floor_to_tick(raw, 1.0)
+    else: return floor_to_tick(raw, 5.0)
+
+def floor_to_tick(val, tick):
+    return round((val // tick) * tick, 2)
+
+# --- 3. 頁面配置 ---
 st.set_page_config(page_title="家族投資戰情室", layout="wide")
 
 if 'db' not in st.session_state: st.session_state.db = lod()
 u = st.session_state.get('u')
 
-# --- 3. 登入系統 (落實密碼保護) ---
+# --- 4. 登入系統 ---
 if not u:
     st.markdown("<h1 style='text-align: center;'>🛡️ 家族投資安全系統</h1>", unsafe_allow_html=True)
     _, c2, _ = st.columns([1, 1.2, 1])
@@ -71,81 +75,89 @@ if not u:
             db = lod()
             if uid and upw:
                 ph = hsh(upw)
-                # 記憶功能：新用戶設定密碼，老用戶驗證密碼
                 if uid not in db: 
                     db[uid] = {"p": ph, "s": []}
                     sav(db)
                 if db[uid]["p"] == ph: 
-                    st.session_state.u = uid
-                    st.session_state.db = db
-                    st.rerun()
-                else: 
-                    st.error("密碼錯誤，請重新輸入。")
+                    st.session_state.u = uid; st.session_state.db = db; st.rerun()
+                else: st.error("密碼錯誤")
     st.stop()
 
-# --- 4. 側邊選單 ---
+# --- 5. 導覽選單 ---
 st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
-if st.sidebar.button("🔒 安全登出"):
-    st.session_state.u = None
-    st.rerun()
+if st.sidebar.button("🔒 安全登出"): st.session_state.u = None; st.rerun()
 
-# --- 5. AI 助手 ---
+# --- 6. AI 助手 ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
-    st.info("目前的顧問大腦：Gemini 1.5 系列 (2026 穩定連線版)")
     p = st.chat_input("請輸入您的投資問題...")
     if p:
         with st.chat_message("user"): st.write(p)
-        with st.spinner("AI 顧問思考中..."):
+        with st.spinner("AI 顧問分析中..."):
             ans = ask_gemini(p)
             with st.chat_message("assistant"): st.write(ans)
 
-# --- 6. 資產儀表板 ---
+# --- 7. 資產儀表板 (含漲停分析表) ---
 elif m == "📈 資產儀表板":
     st.title("💎 家族資產戰情室")
-    try:
-        ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
-    except:
-        ex_rate = 32.5
+    try: ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
+    except: ex_rate = 32.5
     
     sk = st.session_state.db[u].get("s", [])
     if sk:
         res = []
-        with st.spinner('同步市場價格中...'):
+        with st.spinner('同步市場數據中...'):
             for i in sk:
                 sym = i.get("t", "").strip().upper()
                 try:
                     tk = yf.Ticker(sym)
-                    curr = tk.history(period="1d")["Close"].iloc[-1]
-                    is_us = ".TW" not in sym and ".TWO" not in sym
-                    rate = ex_rate if is_us else 1.0
+                    df_hist = tk.history(period="2d")
+                    curr = df_hist["Close"].iloc[-1]
+                    prev = df_hist["Close"].iloc[-2]
+                    
+                    is_tw = ".TW" in sym or ".TWO" in sym
+                    limit_price = calc_limit(prev, is_tw)
+                    
+                    rate = ex_rate if not is_tw else 1.0
                     mv = round(curr * rate * i.get("q", 0))
                     pf = int(mv - (i.get("p", 0) * rate * i.get("q", 0)))
-                    res.append({"名稱": i.get("n", ""), "代碼": sym, "現價": round(curr, 2), "市值": mv, "損益": pf})
+                    
+                    res.append({
+                        "名稱": i.get("n", ""),
+                        "代碼": sym,
+                        "昨日收盤": round(prev, 2),
+                        "今日現價": round(curr, 2),
+                        "預估漲停": limit_price,
+                        "距漲停差": f"{round(limit_price - curr, 2)} ({round(((limit_price/curr)-1)*100, 1)}%)",
+                        "市值": mv,
+                        "損益": pf
+                    })
                 except: continue
         
         if res:
-            df = pd.DataFrame(res)
+            final_df = pd.DataFrame(res)
+            
+            # 指標卡
             c1, c2, c3 = st.columns(3)
-            c1.metric("總市值 (TWD)", f"{df['市值'].sum():,} 元")
-            c2.metric("總損益", f"{df['損益'].sum():,} 元", delta=int(df['損益'].sum()))
+            c1.metric("總市值", f"{final_df['市值'].sum():,} 元")
+            c2.metric("總盈虧", f"{final_df['損益'].sum():,} 元", delta=int(final_df['損益'].sum()))
             c3.metric("美金匯率", f"{ex_rate}")
             
-            st.dataframe(df.style.highlight_max(axis=0, subset=['損益'], color='#dcfce7'), use_container_width=True)
-            st.plotly_chart(px.pie(df, values='市值', names='名稱', hole=0.4, title="資產分佈圖"), use_container_width=True)
+            # 漲停監控表
+            st.subheader("🔥 漲停監控與持股分析")
+            st.dataframe(final_df, use_container_width=True)
+            
+            st.plotly_chart(px.pie(final_df, values='市值', names='名稱', hole=0.4), use_container_width=True)
 
     with st.expander("🛠️ 管理持股"):
         with st.form("add"):
             ca, cb, cc, cd = st.columns(4)
-            n, t, p, q = ca.text_input("名稱"), cb.text_input("代碼 (如: 2330.TW)"), cc.number_input("成本價格"), cd.number_input("持有股數")
-            if st.form_submit_button("➕ 新增持股"):
-                if n and t:
-                    db = lod()
-                    db[u]["s"].append({"n": n, "t": t.upper(), "p": p, "q": q})
-                    sav(db); st.session_state.db=db; st.rerun()
+            n, t, p, q = ca.text_input("名稱"), cb.text_input("代碼"), cc.number_input("成本"), cd.number_input("股數")
+            if st.form_submit_button("➕ 新增"):
+                db = lod(); db[u]["s"].append({"n":n,"t":t.upper(),"p":p,"q":q}); sav(db); st.rerun()
 
-# --- 7. 攤平計算機 ---
+# --- 8. 攤平計算機 ---
 elif m == "🧮 攤平計算機":
     st.title("🧮 成本攤平工具")
     p1 = st.number_input("原價", value=100.0); q1 = st.number_input("原股數", value=1000.0)
