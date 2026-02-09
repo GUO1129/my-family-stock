@@ -13,25 +13,26 @@ except ImportError:
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# --- 修正後的初始化邏輯 ---
+
+# --- 這裡已經填入你的金鑰 ---
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 model = None
 
 if HAS_AI_SDK:
-    if NEW_API_KEY != "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" and NEW_API_KEY.startswith("AIza"):
+    # 只要金鑰格式正確 (AIza開頭) 就嘗試初始化
+    if NEW_API_KEY.startswith("AIza"):
         try:
             genai.configure(api_key=NEW_API_KEY)
-            # 測試是否能列出模型，這能確認 Key 是否真的有效
             model = genai.GenerativeModel('gemini-1.5-flash')
-            # 預先做一次簡單測試
         except Exception as e:
             st.error(f"⚠️ 金鑰認證失敗：{e}")
-            st.info("請檢查：1. 金鑰是否複製完整 2. 是否有開通 Gemini API 權限")
-    elif NEW_API_KEY.startswith("請貼上"):
-        pass # 尚未填寫，由下方 UI 顯示警告
     else:
-        st.error("❌ 金鑰格式不正確！應該是以 'AIza' 開頭的字串。")
+        # 如果你還沒換掉預設文字才會報錯
+        if "請貼上" in NEW_API_KEY:
+            pass 
+        else:
+            st.error("❌ 金鑰格式不正確！")
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -63,7 +64,6 @@ if not u:
     with c2:
         uid = st.text_input("👤 帳號")
         upw = st.text_input("🔑 密碼", type="password")
-        # 記憶功能：根據你的要求，我們會為每個帳號設定密碼保護
         if st.button("🚀 進入系統", use_container_width=True):
             db = lod()
             if uid and upw:
@@ -79,21 +79,19 @@ st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 (修正 defined 錯誤) ---
+# --- 5. AI 助手 ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
-    if NEW_API_KEY == "請貼上你的新金鑰":
-        st.warning("⚠️ 請先在程式碼第 17 行填入你的 API Key。")
-    elif not HAS_AI_SDK:
+    if not HAS_AI_SDK:
         st.error("⚠️ 環境缺少套件，請確保 requirements.txt 包含 google-generativeai")
     elif model is None:
-        st.error("❌ AI 模型初始化失敗，請檢查金鑰是否正確。")
+        st.error("❌ AI 模型尚未初始化。請檢查第 18 行的金鑰是否正確。")
     else:
         p = st.chat_input("請輸入您的投資問題...")
         if p:
             with st.chat_message("user"): st.write(p)
             try:
-                with st.spinner("AI 正在連接..."):
+                with st.spinner("AI 正在思考中..."):
                     response = model.generate_content(p)
                     if response.candidates:
                         ans = response.text
@@ -172,4 +170,4 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
-
+    
