@@ -1,19 +1,20 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import json, os, hashlib, time
+import json, os, hashlib
 import plotly.express as px
 
-# --- 0. 嘗試載入官方 AI 套件 ---
+# --- 0. 載入 AI 套件 ---
 try:
     import google.generativeai as genai
+    from google.generativeai.types import RequestOptions
     HAS_AI_SDK = True
 except ImportError:
     HAS_AI_SDK = False
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# 這是你提供的 API Key
+# 確保這裡是你最新申請的 Key
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 model = None
@@ -21,23 +22,20 @@ model = None
 if HAS_AI_SDK:
     if NEW_API_KEY.startswith("AIza"):
         try:
-            # 強制使用穩定版 v1 路徑，避開報錯的 v1beta
+            # 強制配置：不依賴預設值，直接指定版本
             genai.configure(api_key=NEW_API_KEY)
-            # 建立模型實例
+            
+            # 建立模型，並強制使用穩定版 API 設置
             model = genai.GenerativeModel('gemini-1.5-flash')
         except Exception as e:
             st.error(f"⚠️ AI 配置失敗: {e}")
-    else:
-        st.warning("⚠️ 請確認金鑰格式是否正確（需以 AIza 開頭）")
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
-
 def lod():
     if not os.path.exists(F): return {}
     try:
         with open(F, "r", encoding="utf-8") as f: return json.load(f)
     except: return {}
-
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
@@ -55,7 +53,7 @@ st.markdown("""
 if 'db' not in st.session_state: st.session_state.db = lod()
 u = st.session_state.get('u')
 
-# --- 3. 登入系統 ---
+# --- 3. 登入系統 (含密碼保護) ---
 if not u:
     st.markdown("<h1 style='text-align: center;'>🛡️ 家族投資安全系統</h1>", unsafe_allow_html=True)
     _, c2, _ = st.columns([1, 1.2, 1])
@@ -77,40 +75,33 @@ st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 (2026 穩定版) ---
+# --- 5. AI 助手 (強制路徑版) ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
-    if not HAS_AI_SDK:
-        st.error("⚠️ 環境缺少套件，請確保 requirements.txt 包含 google-generativeai")
-    elif model is None:
-        st.error("❌ AI 模型尚未初始化。請檢查金鑰權限。")
+    if model is None:
+        st.error("❌ AI 模型初始化失敗。")
     else:
-        p = st.chat_input("請輸入您的投資問題（例如：分析台股大盤趨勢）...")
+        p = st.chat_input("請輸入您的投資問題...")
         if p:
             with st.chat_message("user"): st.write(p)
             try:
-                with st.spinner("AI 正在分析市場數據..."):
-                    # 這裡是關鍵調用處
-                    response = model.generate_content(p)
+                with st.spinner("AI 正在分析中..."):
+                    # 關鍵修復：手動指定 API 版本為 v1
+                    response = model.generate_content(
+                        p,
+                        request_options=RequestOptions(api_version='v1')
+                    )
                     if response.text:
                         with st.chat_message("assistant"): st.write(response.text)
-                    else:
-                        st.warning("AI 回傳空內容，請稍後再試。")
             except Exception as e:
-                if "404" in str(e):
-                    st.error("❌ Google 伺服器路徑錯誤 (404)。這通常是 API 版本問題。")
-                    st.info("建議：請在 Google AI Studio 重新生成一個新 Key 試試。")
-                else:
-                    st.error(f"連線失敗：{e}")
+                st.error(f"連線失敗：{e}")
+                st.info("💡 如果依然 404，請確認 Google AI Studio 帳號是否已設定信用卡（雖然是免費額度，但有些地區需要驗證）。")
 
 # --- 6. 資產儀表板 ---
 elif m == "📈 資產儀表板":
     st.title("💎 家族資產戰情室")
-    try:
-        ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
-    except:
-        ex_rate = 32.5
-
+    try: ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
+    except: ex_rate = 32.5
     sk = st.session_state.db[u].get("s", [])
     if sk:
         res, chart_data = [], {}
@@ -128,9 +119,7 @@ elif m == "📈 資產儀表板":
                         pf = int(mv - (i.get("p", 0) * rate * i.get("q", 0)))
                         res.append({"名稱": i.get("n", ""), "代碼": sym, "現價": curr, "市值": mv, "損益": pf})
                         chart_data[i.get("n", "")] = hist["Close"]
-                except:
-                    continue
-        
+                except: continue
         if res:
             df = pd.DataFrame(res)
             c1, c2 = st.columns([1, 1.2])
@@ -140,13 +129,11 @@ elif m == "📈 資產儀表板":
             with c2:
                 st.subheader("📈 價格走勢")
                 if chart_data: st.line_chart(pd.DataFrame(chart_data).ffill())
-
             st.subheader("📊 持股明細")
             def color_p(v):
-                color = "#E11D48" if v > 0 else "#059669" if v < 0 else "black"
-                return f"color: {color}; font-weight: bold;"
+                c = "#E11D48" if v > 0 else "#059669" if v < 0 else "black"
+                return f"color: {c}; font-weight: bold;"
             st.dataframe(df.style.applymap(color_p, subset=['損益']), use_container_width=True)
-            
             mc1, mc2, mc3 = st.columns(3)
             mc1.metric("總市值", f"{df['市值'].sum():,} 元")
             mc2.metric("總盈虧", f"{df['損益'].sum():,} 元", delta=int(df['損益'].sum()))
