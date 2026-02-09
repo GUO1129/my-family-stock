@@ -315,4 +315,101 @@ if m == "📈 資產儀表板":
             st.dataframe(styled_df.hide(subset=["_損益值_"]), use_container_width=True) # 隱藏_損益值_欄位
             st.caption(f"💡 目前參考匯率：USD/TWD = **{ex_rate}**")
             
-            #
+            # --- 總覽大型卡片 ---
+            st.markdown("### 📈 財務關鍵數據 (台幣總計)", unsafe_allow_html=True)
+            total_market_value = df['市值(台幣)'].sum()
+            total_profit = df['損益(台幣)'].sum()
+            total_dividend = df['年股利(台幣)'].sum()
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("總市值", f"{total_market_value:,.0f} 元")
+            with col2:
+                # 總盈虧的顏色自動變化
+                delta_color = "inverse" if total_profit < 0 else "normal"
+                st.metric("總盈虧", f"{total_profit:,.0f} 元", delta=f"{total_profit:,.0f} 元", delta_color=delta_color)
+            with col3:
+                st.metric("預計年股利", f"{total_dividend:,.0f} 元")
+            
+            st.markdown("---") # 分隔線
+            
+            # --- 圓餅圖/趨勢圖 ---
+            l, r = st.columns([1, 1.5])
+            with l:
+                # 升級為互動式環形圖
+                fig_pie = go.Figure(data=[go.Pie(labels=df['股票'], values=df['市值(台幣)'], hole=.4)])
+                fig_pie.update_layout(title_text='資產配比', title_x=0.5, 
+                                      font=dict(color="#333333"), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig_pie, use_container_width=True, config={'displayModeBar': False})
+            with r:
+                sel = st.selectbox("👉 選擇個股查看歷史趨勢", df["股票"].tolist(), key="trend_selector")
+                cod = df[df["股票"] == sel.split(' ')[0]]["代碼"].values[0] # 移除 emoji
+                h = yf.Ticker(cod).history(period="6mo")
+                if not h.empty:
+                    fig_line = px.line(h, y="Close", title=f"{sel.split(' ')[0]} 6個月趨勢 (原始幣別)")
+                    fig_line.update_layout(title_x=0.5, font=dict(color="#333333"), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                    fig_line.update_traces(line_color='#2563EB', line_width=2) # 藍色線條
+                    st.plotly_chart(fig_line, use_container_width=True, config={'displayModeBar': False})
+                else:
+                    st.info("暫無趨勢數據可顯示。")
+    else: st.info("目前清單為空。請點擊上方'新增持股項目'開始建立您的投資組合！")
+
+# --- 6. 股利日曆 ---
+elif m == "📅 股利日曆":
+    st.markdown("<h2 style='color: #1a202c;'>📅 股利與事件日曆</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #4a5568;'>追蹤您的持股除息日、財報公告等關鍵日期。</p>", unsafe_allow_html=True)
+    
+    # 這裡可以加入更多實用的事件追蹤邏輯
+    st.info("功能持續擴充中，將自動抓取您清單中股票的最新除息與財報資訊。")
+
+# --- 7. 交易精算大師 ---
+elif m == "🧮 交易精算大師":
+    st.markdown("<h2 style='color: #1a202c;'>🧮 交易獲利精算 (台股專用)</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #4a5568;'>精確計算買賣股票時，扣除手續費與稅金後的「真正淨利」。</p>", unsafe_allow_html=True)
+    
+    with st.container():
+        c1, c2, c3 = st.columns(3)
+        buy_p = c1.number_input("買入價格", value=100.0, step=0.1, format="%.2f", help="您買入股票的每股價格")
+        sell_p = c2.number_input("預計賣出價格", value=102.0, step=0.1, format="%.2f", help="您預期賣出股票的每股價格")
+        shares = c3.number_input("成交股數", value=1000, step=100, format="%d", help="買賣的總股數")
+        
+        st.markdown("---")
+        
+        c4, c5 = st.columns(2)
+        discount = c4.slider("手續費折扣 (例如: 2.8折 -> 輸入2.8)", 0.0, 10.0, 2.8, step=0.1, help="您的券商給予的手續費折扣，0為免手續費，10為無折扣")
+        is_day_trade = c5.checkbox("這是當沖交易 (交易稅減半)", help="當沖交易的交易稅為0.15%，非當沖為0.3%")
+
+    # 運算邏輯
+    fee_rate = 0.001425 * (discount / 10.0) # 千分之1.425 * 折扣
+    tax_rate = 0.0015 if is_day_trade else 0.003
+    
+    buy_fee = int(max(20, buy_p * shares * fee_rate)) # 買入手續費，最低20元
+    sell_fee = int(max(20, sell_p * shares * fee_rate)) # 賣出手續費，最低20元
+    
+    tax = int(sell_p * shares * tax_rate) # 交易稅
+    
+    total_cost = int((buy_p * shares) + buy_fee)
+    total_get = int((sell_p * shares) - sell_fee - tax)
+    net_profit = total_get - total_cost
+    
+    # 保本價計算
+    # 讓 (賣出價 * (1 - 費率 - 稅率)) - 20 (最低手續費) = 買入價 * (1 + 費率) + 20 (最低手續費)
+    # 簡化公式：breakeven_point * (1 - fee_rate - tax_rate) = buy_price * (1 + fee_rate)
+    # 忽略最低手續費對保本價的微小影響，簡化計算
+    breakeven = (buy_p * (1 + fee_rate)) / (1 - fee_rate - tax_rate)
+
+    st.divider()
+    res_a, res_b = st.columns(2)
+    # 最終純利顏色根據盈虧變化
+    profit_color_style = "color: #ef4444;" if net_profit > 0 else "color: #22c55e;" if net_profit < 0 else ""
+    res_a.markdown(f"<div style='background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.06); border-left: 5px solid #2563EB;'>"
+                   f"<p style='color: #64748b; font-size: 1.0em; margin-bottom: 5px;'>💰 最終純利 (已扣稅費)</p>"
+                   f"<p style='font-size: 2.2em; font-weight: 700; {profit_color_style}'>{net_profit:,} 元</p>"
+                   f"</div>", unsafe_allow_html=True)
+    
+    res_b.markdown(f"<div style='background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.06); border-left: 5px solid #10b981;'>"
+                   f"<p style='color: #64748b; font-size: 1.0em; margin-bottom: 5px;'>🛡️ 損益平價 (保本價)</p>"
+                   f"<p style='font-size: 2.2em; font-weight: 700; color: #1a202c;'>{round(breakeven, 2)} 元</p>"
+                   f"</div>", unsafe_allow_html=True)
+    
+    st.info(f"💡 試算詳情：買入手續費 ${buy_fee}，賣出手續費 ${sell_fee}，交易稅 ${tax}。")
