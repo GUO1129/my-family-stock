@@ -145,4 +145,18 @@ if m == "📈 資產儀表板":
             with st.expander("🗑️ 管理/刪除持股"):
                 for idx, item in enumerate(sk):
                     col_a, col_b = st.columns([4, 1])
-                    col_a.write(
+                    col_a.write(f"**{item.get('n')}** ({item.get('t')})")
+                    if col_b.button("刪除", key=f"del_{idx}"):
+                        current_db = lod()
+                        current_db[u]["s"].pop(idx)
+                        sav(current_db)
+                        st.session_state.db = current_db
+                        st.rerun()
+    else:
+        st.info("目前還沒有持股資料。")
+
+# --- 其他功能保持不變 ---
+elif m == "📅 股利日曆":
+    st.title("📅 事件追蹤")
+elif m == "🧮 攤平計算機":
+    st.title("🧮 成本攤平工具")
