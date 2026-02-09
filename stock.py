@@ -13,13 +13,14 @@ except ImportError:
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# 重新填入正確金鑰
-BACKEND_GEMINI_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw"
 
-if HAS_AI_SDK:
+# 【在此處貼上你新申請的 API Key】
+NEW_API_KEY = "請貼上你的新金鑰" 
+
+if HAS_AI_SDK and NEW_API_KEY != "請貼上你的新金鑰":
     try:
-        genai.configure(api_key=BACKEND_GEMINI_KEY)
-        # 這裡改用通用調用方式，不指定 v1beta
+        genai.configure(api_key=NEW_API_KEY)
+        # 這裡不鎖死版本，讓 SDK 自己去找最穩定的 flash 模型
         model = genai.GenerativeModel('gemini-1.5-flash')
     except Exception as e:
         st.error(f"AI 配置出錯: {e}")
@@ -69,31 +70,31 @@ st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 (2026 穩定連線版) ---
+# --- 5. AI 助手 (終極穩定版) ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
-    if not HAS_AI_SDK:
-        st.error("⚠️ 系統環境尚未安裝 AI 驅動程式。")
+    if NEW_API_KEY == "請貼上你的新金鑰":
+        st.warning("⚠️ 請先在程式碼中填入你從 Google AI Studio 申請的 API Key。")
+    elif not HAS_AI_SDK:
+        st.error("⚠️ 環境缺少 google-generativeai 套件，請更新 requirements.txt。")
     else:
-        p = st.chat_input("詢問市場分析（例如：現在適合買美股嗎？）...")
+        p = st.chat_input("詢問投資建議...")
         if p:
             with st.chat_message("user"): st.write(p)
             try:
-                with st.spinner("AI 正在思考..."):
-                    # 改用更穩定的 generate_content 調用
+                with st.spinner("AI 正在連接..."):
                     response = model.generate_content(p)
-                    if response.text:
-                        with st.chat_message("assistant"): st.write(response.text)
+                    # 修正：部分地區 response 可能需要處理安全過濾
+                    if response.candidates:
+                        ans = response.text
+                        with st.chat_message("assistant"): st.write(ans)
                     else:
-                        st.warning("AI 沒有返回文字內容，請再試一次。")
+                        st.error("AI 拒絕回答此問題（可能涉及敏感內容）。")
             except Exception as e:
-                # 針對你提到的 404 錯誤進行特別攔截與說明
-                if "404" in str(e):
-                    st.error("❌ Google AI 伺服器路徑錯誤。請確認 Google AI Studio 內的 API Key 狀態。")
-                else:
-                    st.error(f"連線異常: {e}")
+                st.error(f"連線失敗：{e}")
+                st.info("建議檢查：1. Key 是否正確 2. 帳號是否開通了 Gemini 1.5 使用權限")
 
-# --- 6. 資產儀表板 ---
+# --- 6. 資產儀表板 (圓餅圖 + 趨勢圖) ---
 elif m == "📈 資產儀表板":
     st.title("💎 家族資產戰情室")
     try: ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
@@ -102,7 +103,7 @@ elif m == "📈 資產儀表板":
     sk = st.session_state.db[u].get("s", [])
     if sk:
         res, chart_data = [], {}
-        with st.spinner('同步數據中...'):
+        with st.spinner('同步市場數據中...'):
             for i in sk:
                 sym = i.get("t", "").strip().upper()
                 try:
@@ -122,13 +123,13 @@ elif m == "📈 資產儀表板":
             df = pd.DataFrame(res)
             c1, c2 = st.columns([1, 1.2])
             with c1:
-                st.subheader("🍕 資產比例")
+                st.subheader("🍕 資產配置")
                 st.plotly_chart(px.pie(df, values='市值', names='名稱', hole=0.4), use_container_width=True)
             with c2:
-                st.subheader("📈 趨勢圖")
+                st.subheader("📈 價格走勢")
                 if chart_data: st.line_chart(pd.DataFrame(chart_data).ffill())
 
-            st.subheader("📊 持股清單")
+            st.subheader("📊 持股明細")
             def color_p(v):
                 color = "#E11D48" if v > 0 else "#059669" if v < 0 else "black"
                 return f"color: {color}; font-weight: bold;"
