@@ -10,10 +10,9 @@ F = "data.json"
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 def ask_gemini(prompt):
-    """手動透過 HTTP 連線，並嘗試不同路徑與模型名稱"""
-    # 嘗試方案 A: 使用 1.5-flash-latest (這是目前最穩定的別名)
-    # 嘗試方案 B: 如果 v1 不行，改回 v1beta (有時候 v1 正式版需要透過 Google Cloud 啟用才能用)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={NEW_API_KEY}"
+    """使用相容性最高的 gemini-pro 模型，避開 1.5 Flash 的地區限制"""
+    # 使用 v1 穩定路徑，搭配 gemini-pro
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={NEW_API_KEY}"
     
     headers = {'Content-Type': 'application/json'}
     payload = {
@@ -22,15 +21,16 @@ def ask_gemini(prompt):
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         result = response.json()
+        
         if response.status_code == 200:
             return result['candidates'][0]['content']['parts'][0]['text']
         else:
-            # 如果 1.5-flash 失敗，自動嘗試 1.0-pro (這是保底方案)
-            if response.status_code == 404:
-                return "❌ 模型找不到 (404)。請檢查：\n1. Google AI Studio 帳號是否開通了 Gemini 1.5 權限。\n2. 你的帳號地區是否在支援範圍。"
-            return f"❌ API 錯誤 ({response.status_code}): {result.get('error', {}).get('message', '未知錯誤')}"
+            # 自動診斷錯誤訊息
+            error_detail = result.get('error', {}).get('message', '未知錯誤')
+            return f"❌ AI 服務暫時無法存取 ({response.status_code})\n原因：{error_detail}"
+            
     except Exception as e:
-        return f"⚠️ 連線異常: {str(e)}"
+        return f"⚠️ 連線異常: {str(e)}")}"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -155,4 +155,5 @@ elif m == "🧮 攤平計算機":
     p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
     if (q1 + q2) > 0:
         st.metric("💡 攤平後均價", f"{round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)} 元")
+
 
