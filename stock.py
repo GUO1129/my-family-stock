@@ -1,163 +1,137 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.express as px
-import json, os, hashlib
+import json, os, hashlib, requests
 
-# --- 1. 後端資料核心 ---
+# ==========================================
+# 🔑 基礎設定與 AI 金鑰
+# ==========================================
+BACKEND_GEMINI_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw"
 F = "data.json"
-def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
+
+# --- 1. 資料庫管理工具 ---
+def hsh(p): 
+    return hashlib.sha256(p.encode()).hexdigest()
+
 def lod():
     if not os.path.exists(F): return {}
     try:
         with open(F, "r", encoding="utf-8") as f: return json.load(f)
     except: return {}
+
 def sav(d):
     with open(F, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
 
-# --- 2. 介面樣式 ---
+# --- 2. 系統介面初始化 ---
 st.set_page_config(page_title="家族投資系統", layout="wide")
-st.markdown("""
-<style>
-    :root { color-scheme: light; }
-    .stApp { background-color: #FFFFFF !important; }
-    .main .block-container p, .main .block-container label, .main .block-container span, .main .block-container div { 
-        color: #000000 !important; font-weight: 500; 
-    }
-    h1, h2, h3 { color: #1E3A8A !important; }
-    [data-testid="stSidebar"] { background-color: #F8FAFC !important; }
-    input { color: #000000 !important; background-color: #FFFFFF !important; }
-</style>
-""", unsafe_allow_html=True)
 
-if 'db' not in st.session_state: st.session_state.db = lod()
-u = st.session_state.get('u')
+if 'db' not in st.session_state: 
+    st.session_state.db = lod()
+if 'u' not in st.session_state: 
+    st.session_state.u = None
 
-# --- 3. 登入系統 ---
-if not u:
+# --- 3. 登入保護系統 ---
+if not st.session_state.u:
     st.markdown("<h1 style='text-align: center;'>🛡️ 家族投資安全系統</h1>", unsafe_allow_html=True)
-    _, c2, _ = st.columns([1, 1.2, 1])
-    with c2:
-        uid = st.text_input("👤 帳號")
-        upw = st.text_input("🔑 密碼", type="password")
-        if st.button("🚀 登入系統", use_container_width=True):
+    _, col_mid, _ = st.columns([1, 1.2, 1])
+    with col_mid:
+        uid = st.text_input("👤 帳號名稱")
+        upw = st.text_input("🔑 登入密碼", type="password")
+        if st.button("🚀 登入 / 註冊帳號", use_container_width=True):
             if uid and upw:
-                ph=hsh(upw); db=st.session_state.db
-                if uid not in db: db[uid]={"p":ph,"s":[]}; sav(db)
-                if db[uid]["p"]==ph: 
-                    st.session_state.u=uid
-                    st.session_state.db = db # 確保 session 內的 db 是最新的
+                db = st.session_state.db
+                ph = hsh(upw)
+                if uid not in db:
+                    # 註冊新帳號
+                    db[uid] = {"p": ph, "s": []}
+                    sav(db)
+                
+                if db[uid]["p"] == ph:
+                    st.session_state.u = uid
+                    st.success("登入成功！")
                     st.rerun()
+                else:
+                    st.error("密碼錯誤，請重新輸入。")
+            else:
+                st.warning("請輸入帳號與密碼。")
     st.stop()
 
-# --- 4. 側邊欄 ---
-st.sidebar.markdown(f"### 👤 使用者: {u}")
-m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "📅 股利日曆", "🧮 攤平計算機"])
+# --- 4. 側邊選單與登出 ---
+u = st.session_state.u
+st.sidebar.markdown(f"### 👤 目前使用者: {u}")
+m = st.sidebar.radio("功能選單", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 
-with st.sidebar.expander("🔐 帳號安全"):
-    old_p = st.text_input("舊密碼", type="password")
-    new_p = st.text_input("新密碼", type="password")
-    if st.button("確認修改"):
-        db = st.session_state.db
-        if hsh(old_p) == db[u]["p"]:
-            db[u]["p"] = hsh(new_p); sav(db)
-            st.success("成功！請重新登入"); st.session_state.u = None; st.rerun()
-        else: st.error("舊密碼錯誤")
+if st.sidebar.button("🔒 安全登出"):
+    st.session_state.u = None
+    st.rerun()
 
-if st.sidebar.button("🔒 安全登出", use_container_width=True): 
-    st.session_state.u=None; st.rerun()
-
-# --- 5. 資產儀表板 ---
-if m == "📈 資產儀表板":
-    st.title("💎 持股戰情室")
+# --- 5. 功能邏輯：AI 投資助手 ---
+if m == "🤖 AI 投資助手":
+    st.title("🤖 家族私人 AI 顧問")
+    st.info("您可以詢問關於市場趨勢、個股分析或資產配置的建議。")
     
-    # 取得匯率
-    try:
-        ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
-    except: ex_rate = 32.5
+    prompt = st.chat_input("輸入您的問題...")
+    if prompt:
+        with st.chat_message("user"): st.write(prompt)
+        with st.spinner("AI 正在分析中..."):
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={BACKEND_GEMINI_KEY}"
+            try:
+                # 附帶用戶持股資訊給 AI 參考
+                stocks = st.session_state.db[u].get("s", [])
+                context = f"你是專業投資顧問。用戶目前持股：{json.dumps(stocks)}。問題：{prompt}"
+                
+                res = requests.post(url, json={"contents": [{"parts": [{"text": context}]}]}, timeout=15)
+                if res.status_code == 200:
+                    ans = res.json()['candidates'][0]['content']['parts'][0]['text']
+                    with st.chat_message("assistant"): st.write(ans)
+                else:
+                    st.error("AI 連線失敗，請檢查金鑰或網路。")
+            except Exception as e:
+                st.error(f"連線錯誤: {e}")
 
-    # 儲存持股的表單 (簡化版，確保必能儲存)
-    with st.expander("📝 新增持股項目", expanded=True):
-        with st.form("simple_add_form"):
-            c1, c2 = st.columns(2)
-            new_n = c1.text_input("股票名稱 (如: 大井泵浦)")
-            new_t = c1.text_input("代碼 (如: 6982.TWO)")
-            new_p = c2.number_input("平均成本", 0.0)
-            new_q = c2.number_input("持有股數", 1.0)
-            new_dv = c2.number_input("單股年股利", 0.0)
+# --- 6. 功能邏輯：資產儀表板 ---
+elif m == "📈 資產儀表板":
+    st.title("📈 持股清單管理")
+    
+    with st.expander("➕ 新增投資項目"):
+        with st.form("add_stock_form"):
+            col_a, col_b = st.columns(2)
+            name = col_a.text_input("股票/標的名稱")
+            ticker = col_b.text_input("代碼 (例: 2330.TW)")
+            price = col_a.number_input("買入平均成本", min_value=0.0)
+            qty = col_b.number_input("持有股數", min_value=0.0)
             
-            submit = st.form_submit_button("💾 立即儲存")
-            if submit:
-                if new_n and new_t:
-                    # 讀取最新 DB，增加資料，儲存
-                    current_db = lod()
-                    current_db[u]["s"].append({
-                        "n": new_n, 
-                        "t": new_t.upper().strip(), 
-                        "p": new_p, 
-                        "q": new_q, 
-                        "dv": new_dv
-                    })
-                    sav(current_db)
-                    st.session_state.db = current_db # 同步更新 session
-                    st.success(f"✅ {new_n} 已儲存！")
+            if st.form_submit_button("💾 儲存至雲端"):
+                if name and ticker:
+                    st.session_state.db[u]["s"].append({"n": name, "t": ticker.upper(), "p": price, "q": qty})
+                    sav(st.session_state.db)
+                    st.success(f"已成功新增 {name}！")
                     st.rerun()
                 else:
-                    st.warning("請填寫名稱與代碼")
+                    st.error("請完整填寫名稱與代碼。")
 
-    # 顯示列表
-    sk = st.session_state.db[u].get("s", [])
-    if sk:
-        res = []
-        for i in sk:
-            try:
-                sym = i.get("t", "")
-                tk = yf.Ticker(sym)
-                df_h = tk.history(period="1d")
-                
-                if not df_h.empty:
-                    curr = round(df_h["Close"].values[-1], 2)
-                    is_us = ".TW" not in sym and ".TWO" not in sym
-                    rate = ex_rate if is_us else 1.0
-                    mv = round(curr * rate * i.get("q", 0))
-                    pf = int(mv - (i.get("p", 0) * rate * i.get("q", 0)))
-                    res.append({
-                        "股票": i.get("n", ""), "現價": f"{curr} {'USD' if is_us else 'TWD'}",
-                        "市值(台幣)": mv, "損益(台幣)": pf, "代碼": sym
-                    })
-                else:
-                    res.append({
-                        "股票": i.get("n", ""), "現價": "讀取失敗",
-                        "市值(台幣)": 0, "損益(台幣)": 0, "代碼": sym
-                    })
-            except:
-                continue
-        
-        if res:
-            df = pd.DataFrame(res)
-            st.dataframe(df, use_container_width=True)
-            
-            st.markdown("### 📊 財務總覽")
-            c1, c2 = st.columns(2)
-            c1.metric("總市值", f"{df['市值(台幣)'].sum():,} 元")
-            c2.metric("總盈虧", f"{df['損益(台幣)'].sum():,} 元", delta=int(df['損益(台幣)'].sum()))
-            
-            with st.expander("🗑️ 管理/刪除持股"):
-                for idx, item in enumerate(sk):
-                    col_a, col_b = st.columns([4, 1])
-                    col_a.write(f"**{item.get('n')}** ({item.get('t')})")
-                    if col_b.button("刪除", key=f"del_{idx}"):
-                        current_db = lod()
-                        current_db[u]["s"].pop(idx)
-                        sav(current_db)
-                        st.session_state.db = current_db
-                        st.rerun()
+    st.subheader("📊 現有資產一覽")
+    sk_data = st.session_state.db[u].get("s", [])
+    if sk_data:
+        df = pd.DataFrame(sk_data)
+        df.columns = ["名稱", "代碼", "成本", "股數"]
+        st.table(df)
     else:
-        st.info("目前還沒有持股資料。")
+        st.info("目前尚無持股資料，請點擊上方「新增投資項目」。")
 
-# --- 其他功能保持不變 ---
-elif m == "📅 股利日曆":
-    st.title("📅 事件追蹤")
+# --- 7. 功能邏輯：攤平計算機 ---
 elif m == "🧮 攤平計算機":
-    st.title("🧮 成本攤平工具")
-
+    st.title("🧮 成本攤平試算")
+    st.write("計算加碼後的新平均成本：")
+    
+    c1, c2 = st.columns(2)
+    p1 = c1.number_input("現有成本價", value=100.0)
+    q1 = c1.number_input("現有持有股數", value=1000.0)
+    p2 = c2.number_input("計畫加碼價格", value=90.0)
+    q2 = c2.number_input("計畫加碼股數", value=1000.0)
+    
+    if (q1 + q2) > 0:
+        avg_cost = ((p1 * q1) + (p2 * q2)) / (q1 + q2)
+        st.divider()
+        st.metric("💡 攤平後預估均價", f"{round(avg_cost, 2)} 元")
+        st.write(f"總投入資金預估：{round((p1 * q1) + (p2 * q2), 0)} 元")
