@@ -7,14 +7,13 @@ import plotly.express as px
 # --- 0. 載入 AI 套件 ---
 try:
     import google.generativeai as genai
-    from google.generativeai.types import RequestOptions
     HAS_AI_SDK = True
 except ImportError:
     HAS_AI_SDK = False
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# 確保這裡是你最新申請的 Key
+# 使用你的金鑰
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
 model = None
@@ -22,10 +21,9 @@ model = None
 if HAS_AI_SDK:
     if NEW_API_KEY.startswith("AIza"):
         try:
-            # 強制配置：不依賴預設值，直接指定版本
+            # 標準配置
             genai.configure(api_key=NEW_API_KEY)
-            
-            # 建立模型，並強制使用穩定版 API 設置
+            # 宣告模型 (不加額外參數以確保相容性)
             model = genai.GenerativeModel('gemini-1.5-flash')
         except Exception as e:
             st.error(f"⚠️ AI 配置失敗: {e}")
@@ -64,6 +62,7 @@ if not u:
             db = lod()
             if uid and upw:
                 ph=hsh(upw)
+                # 記憶功能：根據你的要求，我們為每個帳號設定密碼保護
                 if uid not in db: db[uid]={"p":ph,"s":[]}; sav(db)
                 if db[uid]["p"]==ph: 
                     st.session_state.u=uid; st.session_state.db=db; st.rerun()
@@ -75,27 +74,28 @@ st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 (強制路徑版) ---
+# --- 5. AI 助手 (相容性最佳化) ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
     if model is None:
-        st.error("❌ AI 模型初始化失敗。")
+        st.error("❌ AI 模型尚未就緒。")
     else:
         p = st.chat_input("請輸入您的投資問題...")
         if p:
             with st.chat_message("user"): st.write(p)
             try:
                 with st.spinner("AI 正在分析中..."):
-                    # 關鍵修復：手動指定 API 版本為 v1
-                    response = model.generate_content(
-                        p,
-                        request_options=RequestOptions(api_version='v1')
-                    )
+                    # 使用最簡單的調用方式
+                    response = model.generate_content(p)
                     if response.text:
                         with st.chat_message("assistant"): st.write(response.text)
             except Exception as e:
-                st.error(f"連線失敗：{e}")
-                st.info("💡 如果依然 404，請確認 Google AI Studio 帳號是否已設定信用卡（雖然是免費額度，但有些地區需要驗證）。")
+                err_msg = str(e)
+                if "404" in err_msg:
+                    st.error("❌ 伺服器路徑錯誤 (404)")
+                    st.info("💡 解決方案：這通常是舊版 Key 的權限問題。請去 AI Studio 點擊 'Create API Key in new project' 產生一個全新的 Key 並替換。")
+                else:
+                    st.error(f"連線失敗：{err_msg}")
 
 # --- 6. 資產儀表板 ---
 elif m == "📈 資產儀表板":
