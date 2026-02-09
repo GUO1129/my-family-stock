@@ -1,12 +1,16 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import json, os, hashlib, time, requests
-import plotly.express as px  # 用來畫圓餅圖
+import json, os, hashlib, time
+import plotly.express as px
+import google.generativeai as genai  # 使用官方驅動程式
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-BACKEND_GEMINI_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw"
+# 設定後端 AI 金鑰
+API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw"
+genai.configure(api_key=API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -53,102 +57,76 @@ st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 ---
+# --- 5. AI 助手 (官方驅動穩定版) ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
+    if "messages" not in st.session_state: st.session_state.messages = []
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+
     p = st.chat_input("詢問市場趨勢...")
     if p:
-        with st.chat_message("user"): st.write(p)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={BACKEND_GEMINI_KEY}"
-        res = requests.post(url, json={"contents": [{"parts": [{"text": p}]}]})
-        if res.status_code == 200:
-            ans = res.json()['candidates'][0]['content']['parts'][0]['text']
-            with st.chat_message("assistant"): st.write(ans)
+        st.session_state.messages.append({"role": "user", "content": p})
+        with st.chat_message("user"): st.markdown(p)
+        with st.spinner("AI 思考中..."):
+            try:
+                response = model.generate_content(p)
+                ans = response.text
+                with st.chat_message("assistant"): st.markdown(ans)
+                st.session_state.messages.append({"role": "assistant", "content": ans})
+            except Exception as e:
+                st.error(f"AI 啟動失敗：請確認 API Key 是否有效。錯誤訊息: {e}")
 
-# --- 6. 資產儀表板 ---
+# --- 6. 資產儀表板 (保留你的圈圈與圖表) ---
 elif m == "📈 資產儀表板":
     st.title("💎 家族資產戰情室")
-    
-    # 匯率與資料抓取
     try: ex_rate = round(yf.Ticker("USDTWD=X").history(period="1d")["Close"].values[-1], 2)
     except: ex_rate = 32.5
 
     sk = st.session_state.db[u].get("s", [])
-    
     if sk:
         res = []
         chart_data = {}
-        with st.spinner('同步最新市場數據中...'):
+        with st.spinner('同步市場數據...'):
             for i in sk:
                 sym = i.get("t", "").strip().upper()
                 try:
-                    tk = yf.Ticker(sym)
-                    hist = tk.history(period="1mo") # 抓一個月資料畫圖
+                    tk = yf.Ticker(sym); hist = tk.history(period="1mo")
                     if not hist.empty:
                         curr = round(hist["Close"].iloc[-1], 2)
                         is_us = ".TW" not in sym and ".TWO" not in sym
                         rate = ex_rate if is_us else 1.0
                         mv = round(curr * rate * i.get("q", 0))
                         pf = int(mv - (i.get("p", 0) * rate * i.get("q", 0)))
-                        res.append({"名稱": i.get("n", ""), "代碼": sym, "現價": curr, "市值(台幣)": mv, "損益(台幣)": pf})
-                        chart_data[i.get("n", "")] = hist["Close"] # 存股價歷史
+                        res.append({"名稱": i.get("n", ""), "代碼": sym, "現價": curr, "市值": mv, "損益": pf})
+                        chart_data[i.get("n", "")] = hist["Close"]
                 except: continue
         
         if res:
             df = pd.DataFrame(res)
+            c1, c2 = st.columns([1, 1.2])
+            with c1: st.plotly_chart(px.pie(df, values='市值', names='名稱', hole=0.4), use_container_width=True)
+            with c2: 
+                if chart_data: st.line_chart(pd.DataFrame(chart_data).ffill())
             
-            # --- 圖表區 ---
-            col_chart1, col_chart2 = st.columns([1, 1.2])
+            st.subheader("📊 持股清單")
+            st.dataframe(df.style.applymap(lambda v: f'color: {"red" if v > 0 else "green" if v < 0 else "black"}; font-weight: bold;', subset=['損益']), use_container_width=True)
             
-            with col_chart1:
-                st.subheader("🍕 資產比例圈圈")
-                fig = px.pie(df, values='市值(台幣)', names='名稱', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col_chart2:
-                st.subheader("📈 近一個月漲跌圖")
-                if chart_data:
-                    # 規格化數據後畫圖
-                    trend_df = pd.DataFrame(chart_data).ffill()
-                    st.line_chart(trend_df)
+            mc1, mc2 = st.columns(2)
+            mc1.metric("總市值", f"{df['市值'].sum():,} 元")
+            mc2.metric("總盈虧", f"{df['損益'].sum():,} 元", delta=int(df['損益'].sum()))
 
-            # --- 數據表格 ---
-            st.subheader("📊 詳細持股清單")
-            def color_p(v): return f'color: {"red" if v > 0 else "green" if v < 0 else "black"}; font-weight: bold;'
-            st.dataframe(df.style.applymap(color_p, subset=['損益(台幣)']), use_container_width=True)
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("總市值", f"{df['市值(台幣)'].sum():,} 元")
-            c2.metric("總盈虧", f"{df['損益(台幣)'].sum():,} 元", delta=int(df['損益(台幣)'].sum()))
-            c3.metric("美金匯率", f"{ex_rate}")
-
-    # 新增與刪除放在最下面
     st.divider()
-    with st.expander("🛠️ 管理持股 (新增/刪除)"):
-        with st.form("add_form"):
+    with st.expander("管理持股"):
+        with st.form("add"):
             c1, c2, c3, c4 = st.columns(4)
-            n = c1.text_input("名稱")
-            t = c2.text_input("代碼")
-            p = c3.number_input("成本", 0.0)
-            q = c4.number_input("股數", 1.0)
-            if st.form_submit_button("➕ 新增項目"):
-                if n and t:
-                    db = lod(); db[u]["s"].append({"n":n,"t":t.upper(),"p":p,"q":q}); sav(db)
-                    st.session_state.db=db; st.rerun()
-        
-        if sk:
-            for idx, item in enumerate(sk):
-                col_a, col_b = st.columns([5, 1])
-                col_a.write(f"🗑️ {item.get('n')} ({item.get('t')})")
-                if col_b.button("點我刪除", key=f"del_{idx}"):
-                    db = lod(); db[u]["s"].pop(idx); sav(db)
-                    st.session_state.db=db; st.rerun()
+            n, t, p, q = c1.text_input("名稱"), c2.text_input("代碼"), c3.number_input("成本"), c4.number_input("股數")
+            if st.form_submit_button("新增"):
+                db=lod(); db[u]["s"].append({"n":n,"t":t.upper(),"p":p,"q":q}); sav(db); st.rerun()
 
 # --- 7. 攤平計算機 ---
 elif m == "🧮 攤平計算機":
     st.title("🧮 成本攤平工具")
-    p1 = st.number_input("原單價", 100.0); q1 = st.number_input("原股數", 1000.0)
-    p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼數", 1000.0)
-    if (q1 + q2) > 0:
-        avg = round(((p1 * q1) + (p2 * q2)) / (q1 + q2), 2)
-        st.metric("💡 攤平後均價", f"{avg} 元")
+    p1 = st.number_input("原價", 100.0); q1 = st.number_input("原股", 1000.0)
+    p2 = st.number_input("加碼價", 90.0); q2 = st.number_input("加碼股", 1000.0)
+    if (q1+q2)>0: st.metric("💡 均價", f"{round(((p1*q1)+(p2*q2))/(q1+q2), 2)} 元")
