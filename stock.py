@@ -1,32 +1,31 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import json, os, hashlib
+import json, os, hashlib, requests
 import plotly.express as px
-
-# --- 0. 載入 AI 套件 ---
-try:
-    import google.generativeai as genai
-    HAS_AI_SDK = True
-except ImportError:
-    HAS_AI_SDK = False
 
 # --- 1. 後端資料核心 ---
 F = "data.json"
-# 使用你的金鑰
+# 確保這裡是你最新申請的 Key
 NEW_API_KEY = "AIzaSyC9YhUvSazgUlT0IU7Cd8RrpWnqgcBkWrw" 
 
-model = None
-
-if HAS_AI_SDK:
-    if NEW_API_KEY.startswith("AIza"):
-        try:
-            # 標準配置
-            genai.configure(api_key=NEW_API_KEY)
-            # 宣告模型 (不加額外參數以確保相容性)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-        except Exception as e:
-            st.error(f"⚠️ AI 配置失敗: {e}")
+def ask_gemini(prompt):
+    """手動透過 HTTP 連線 Google API，避開 SDK 404 問題"""
+    # 強制指定 v1 正式版路徑
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={NEW_API_KEY}"
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        result = response.json()
+        if response.status_code == 200:
+            return result['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return f"❌ API 錯誤 ({response.status_code}): {result.get('error', {}).get('message', '未知錯誤')}"
+    except Exception as e:
+        return f"⚠️ 連線異常: {str(e)}"
 
 def hsh(p): return hashlib.sha256(p.encode()).hexdigest()
 def lod():
@@ -51,7 +50,7 @@ st.markdown("""
 if 'db' not in st.session_state: st.session_state.db = lod()
 u = st.session_state.get('u')
 
-# --- 3. 登入系統 (含密碼保護) ---
+# --- 3. 登入系統 ---
 if not u:
     st.markdown("<h1 style='text-align: center;'>🛡️ 家族投資安全系統</h1>", unsafe_allow_html=True)
     _, c2, _ = st.columns([1, 1.2, 1])
@@ -62,7 +61,6 @@ if not u:
             db = lod()
             if uid and upw:
                 ph=hsh(upw)
-                # 記憶功能：根據你的要求，我們為每個帳號設定密碼保護
                 if uid not in db: db[uid]={"p":ph,"s":[]}; sav(db)
                 if db[uid]["p"]==ph: 
                     st.session_state.u=uid; st.session_state.db=db; st.rerun()
@@ -74,28 +72,18 @@ st.sidebar.markdown(f"### 👤 使用者: {u}")
 m = st.sidebar.radio("功能導覽", ["📈 資產儀表板", "🤖 AI 投資助手", "🧮 攤平計算機"])
 if st.sidebar.button("🔒 安全登出"): st.session_state.u=None; st.rerun()
 
-# --- 5. AI 助手 (相容性最佳化) ---
+# --- 5. AI 助手 (手動 API 版) ---
 if m == "🤖 AI 投資助手":
     st.title("🤖 家族 AI 顧問")
-    if model is None:
-        st.error("❌ AI 模型尚未就緒。")
-    else:
-        p = st.chat_input("請輸入您的投資問題...")
-        if p:
-            with st.chat_message("user"): st.write(p)
-            try:
-                with st.spinner("AI 正在分析中..."):
-                    # 使用最簡單的調用方式
-                    response = model.generate_content(p)
-                    if response.text:
-                        with st.chat_message("assistant"): st.write(response.text)
-            except Exception as e:
-                err_msg = str(e)
-                if "404" in err_msg:
-                    st.error("❌ 伺服器路徑錯誤 (404)")
-                    st.info("💡 解決方案：這通常是舊版 Key 的權限問題。請去 AI Studio 點擊 'Create API Key in new project' 產生一個全新的 Key 並替換。")
-                else:
-                    st.error(f"連線失敗：{err_msg}")
+    p = st.chat_input("請輸入您的投資問題...")
+    if p:
+        with st.chat_message("user"): st.write(p)
+        try:
+            with st.spinner("AI 正在分析市場數據..."):
+                ans = ask_gemini(p)
+                with st.chat_message("assistant"): st.write(ans)
+        except Exception as e:
+            st.error(f"連線失敗：{e}")
 
 # --- 6. 資產儀表板 ---
 elif m == "📈 資產儀表板":
